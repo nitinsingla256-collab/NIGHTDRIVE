@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1366 768" preserveAspectRatio="xMidYMid slice" role="img">
+  <title>PLACEHOLDER  night mountain road, headlights off in this base (beams are a separate overlay)</title>
+  <defs>
+    <linearGradient id="sky-night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#070b14"/>
+      <stop offset="45%" stop-color="#121820"/>
+      <stop offset="100%" stop-color="#0a0c0a"/>
+    </linearGradient>
+    <linearGradient id="road-night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#121416"/>
+      <stop offset="100%" stop-color="#050506"/>
+    </linearGradient>
+  </defs>
+  <rect width="1366" height="768" fill="url(#sky-night)"/>
+  <g fill="#dce6f4">
+    <circle cx="180" cy="70" r="1.2"/>
+    <circle cx="320" cy="40" r="1"/>
+    <circle cx="500" cy="90" r="1.1"/>
+    <circle cx="720" cy="50" r="0.9"/>
+    <circle cx="900" cy="80" r="1.2"/>
+    <circle cx="1080" cy="35" r="1"/>
+    <circle cx="1240" cy="95" r="1.1"/>
+  </g>
+  <circle cx="1160" cy="120" r="16" fill="#d8e0ea" opacity="0.55"/>
+  <path d="M0 390 L220 290 L390 360 L580 230 L780 320 L1000 190 L1200 280 L1366 170 L1366 510 L0 510 Z" fill="#141820"/>
+  <path d="M0 450 L260 335 L450 415 L660 295 L890 385 L1110 275 L1366 335 L1366 540 L0 540 Z" fill="#0c120e"/>
+  <g fill="#060806">
+    <path d="M35 512 L75 380 L115 512 Z"/>
+    <path d="M105 520 L155 345 L205 520 Z"/>
+    <path d="M1145 510 L1195 332 L1245 510 Z"/>
+    <path d="M1235 520 L1290 340 L1345 520 Z"/>
+  </g>
+  <path d="M0 528 C 300 508, 450 628, 730 562 C 1010 496, 1140 648, 1366 582 L1366 768 L0 768 Z" fill="url(#road-night)"/>
+  <path d="M638 560 C 718 548, 798 600, 878 572" fill="none" stroke="#4a4840" stroke-width="4" stroke-dasharray="28 22" opacity="0.18"/>
+  <g transform="translate(430,520) scale(1.15)">
+    <ellipse cx="210" cy="92" rx="170" ry="18" fill="#000" opacity="0.55"/>
+    <path d="M40 70 L70 48 L150 42 L250 48 L320 62 L340 78 L330 88 L50 88 L30 80 Z" fill="#050506"/>
+    <path d="M95 48 L120 22 L210 22 L255 48 Z" fill="#0a0a0c"/>
+    <path d="M128 26 L205 26 L238 46 L150 46 Z" fill="#151820" opacity="0.5"/>
+    <circle cx="95" cy="88" r="22" fill="#0a0a0a" stroke="#1a1a1a" stroke-width="3"/>
+    <circle cx="275" cy="88" r="22" fill="#0a0a0a" stroke="#1a1a1a" stroke-width="3"/>
+    <rect x="48" y="70" width="14" height="8" fill="#1a140c"/>
+    <rect x="300" y="68" width="16" height="8" fill="#1a140c"/>
+  </g>
+</svg>

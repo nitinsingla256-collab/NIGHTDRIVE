@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1366 768" preserveAspectRatio="xMidYMid slice" role="img">
+  <title>PLACEHOLDER  dusk mountain road, headlights off in this base (beams are a separate overlay)</title>
+  <defs>
+    <linearGradient id="sky-dusk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e2a48"/>
+      <stop offset="38%" stop-color="#7a4a58"/>
+      <stop offset="100%" stop-color="#1a1418"/>
+    </linearGradient>
+    <linearGradient id="road-dusk" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1c1c20"/>
+      <stop offset="100%" stop-color="#0a0a0c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1366" height="768" fill="url(#sky-dusk)"/>
+  <circle cx="1180" cy="130" r="18" fill="#f0e8d0" opacity="0.7"/>
+  <path d="M0 400 L210 300 L380 370 L560 240 L760 330 L980 200 L1180 290 L1366 180 L1366 520 L0 520 Z" fill="#2a3048"/>
+  <path d="M0 455 L250 340 L440 420 L650 300 L880 390 L1100 280 L1366 340 L1366 545 L0 545 Z" fill="#1a201c"/>
+  <g fill="#0c100e">
+    <path d="M40 512 L80 385 L120 512 Z"/>
+    <path d="M110 520 L160 350 L210 520 Z"/>
+    <path d="M1150 510 L1200 338 L1250 510 Z"/>
+    <path d="M1240 520 L1295 348 L1350 520 Z"/>
+  </g>
+  <path d="M0 525 C 290 505, 440 625, 720 560 C 1000 495, 1130 645, 1366 580 L1366 768 L0 768 Z" fill="url(#road-dusk)"/>
+  <path d="M635 558 C 715 546, 795 598, 875 570" fill="none" stroke="#8a8070" stroke-width="4" stroke-dasharray="28 22" opacity="0.2"/>
+  <g transform="translate(430,518) scale(1.15)">
+    <ellipse cx="210" cy="92" rx="170" ry="18" fill="#000" opacity="0.5"/>
+    <path d="M40 70 L70 48 L150 42 L250 48 L320 62 L340 78 L330 88 L50 88 L30 80 Z" fill="#080809"/>
+    <path d="M95 48 L120 22 L210 22 L255 48 Z" fill="#101012"/>
+    <path d="M128 26 L205 26 L238 46 L150 46 Z" fill="#2a3048" opacity="0.4"/>
+    <circle cx="95" cy="88" r="22" fill="#111" stroke="#222" stroke-width="3"/>
+    <circle cx="275" cy="88" r="22" fill="#111" stroke="#222" stroke-width="3"/>
+    <rect x="48" y="70" width="14" height="8" fill="#3a2818"/>
+    <rect x="300" y="68" width="16" height="8" fill="#3a2818"/>
+  </g>
+</svg>
