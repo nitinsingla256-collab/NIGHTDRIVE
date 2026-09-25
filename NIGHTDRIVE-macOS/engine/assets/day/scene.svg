@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1366 768" preserveAspectRatio="xMidYMid slice" role="img">
+  <title>PLACEHOLDER  daytime mountain road, Challenger-inspired silhouette (not an official Dodge photo)</title>
+  <defs>
+    <linearGradient id="sky-day" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#4d7aa8"/>
+      <stop offset="40%" stop-color="#9eb7c8"/>
+      <stop offset="100%" stop-color="#4a5844"/>
+    </linearGradient>
+    <linearGradient id="road-day" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#3a3c40"/>
+      <stop offset="100%" stop-color="#1c1d20"/>
+    </linearGradient>
+  </defs>
+  <rect width="1366" height="768" fill="url(#sky-day)"/>
+  <circle cx="1040" cy="120" r="70" fill="#fff3c8"/>
+  <path d="M0 400 L200 290 L360 360 L520 220 L700 310 L900 180 L1100 270 L1366 160 L1366 500 L0 500 Z" fill="#6d7c86"/>
+  <path d="M0 450 L240 330 L430 410 L620 280 L840 380 L1060 250 L1366 320 L1366 530 L0 530 Z" fill="#3e4e3c"/>
+  <g fill="#243028">
+    <path d="M30 510 L70 380 L110 510 Z"/>
+    <path d="M95 515 L145 350 L195 515 Z"/>
+    <path d="M1180 505 L1230 330 L1280 505 Z"/>
+    <path d="M1260 515 L1315 345 L1370 515 Z"/>
+  </g>
+  <path d="M0 515 C 300 490, 450 610, 720 545 C 990 480, 1120 630, 1366 560 L1366 768 L0 768 Z" fill="url(#road-day)"/>
+  <path d="M640 548 C 720 536, 800 588, 880 560" fill="none" stroke="#d8d2b0" stroke-width="4" stroke-dasharray="28 22" opacity="0.4"/>
+  <g transform="translate(430,510) scale(1.15)">
+    <ellipse cx="210" cy="92" rx="170" ry="18" fill="#000" opacity="0.28"/>
+    <path d="M40 70 L70 48 L150 42 L250 48 L320 62 L340 78 L330 88 L50 88 L30 80 Z" fill="#121314"/>
+    <path d="M95 48 L120 22 L210 22 L255 48 Z" fill="#1a1c1e"/>
+    <path d="M128 26 L205 26 L238 46 L150 46 Z" fill="#5a7384" opacity="0.5"/>
+    <circle cx="95" cy="88" r="22" fill="#1a1a1a" stroke="#444" stroke-width="3"/>
+    <circle cx="275" cy="88" r="22" fill="#1a1a1a" stroke="#444" stroke-width="3"/>
+    <rect x="48" y="70" width="14" height="8" fill="#6a5a40"/>
+    <rect x="300" y="68" width="16" height="8" fill="#6a5a40"/>
+  </g>
+</svg>
