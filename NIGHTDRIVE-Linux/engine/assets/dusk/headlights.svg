@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1376 768" preserveAspectRatio="xMidYMid slice" role="img">
+  <title>PLACEHOLDER  dusk headlight beams overlay (replace with headlights.png)</title>
+  
+  <!-- Lamp points sit near the car front in the scene silhouette. -->
+  
+  
+  <circle cx="658" cy="605" r="12" fill="none" stroke="#ffffff" stroke-width="4" filter="drop-shadow(0 0 6px #a0e0ff) drop-shadow(0 0 12px #ffffff)"/><circle cx="658" cy="605" r="4" fill="#ffffff" filter="drop-shadow(0 0 4px #ffffff)"/>
+  <circle cx="878" cy="600" r="12" fill="none" stroke="#ffffff" stroke-width="4" filter="drop-shadow(0 0 6px #a0e0ff) drop-shadow(0 0 12px #ffffff)"/><circle cx="878" cy="600" r="4" fill="#ffffff" filter="drop-shadow(0 0 4px #ffffff)"/>
+</svg>
