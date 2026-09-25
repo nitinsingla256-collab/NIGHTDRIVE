@@ -1,0 +1,14 @@
+{
+  "name": "nightdrive",
+  "version": "1.0.0",
+  "description": "NIGHTDRIVE Cinematic Desktop Wallpaper",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^1.5.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^1.5.0"
+  }
+}

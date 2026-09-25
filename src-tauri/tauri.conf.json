@@ -1,0 +1,49 @@
+{
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "",
+    "devPath": "../engine",
+    "distDir": "../engine"
+  },
+  "package": {
+    "productName": "NightdriveHost",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.nightdrive.desktop",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ]
+    },
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "fullscreen": true,
+        "resizable": false,
+        "title": "NightdriveHost",
+        "width": 1366,
+        "height": 768,
+        "transparent": true,
+        "decorations": false,
+        "alwaysOnBottom": true,
+        "skipTaskbar": true
+      }
+    ]
+  }
+}
