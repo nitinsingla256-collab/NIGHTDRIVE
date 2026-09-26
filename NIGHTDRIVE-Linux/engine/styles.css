@@ -1,0 +1,982 @@
+/* ============================================================
+   NIGHTDRIVE — Phase 3
+   Vanilla CSS. No frameworks.
+   New in Phase 3:
+     - HUD clock / date / weekday (top-centre)
+     - Battery widget (top-left)
+     - Colour-temperature overlay for gradual transitions
+   ============================================================ */
+
+/* ── Reset ── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ── Design tokens (updated by JS per scene) ── */
+:root {
+  --accent: #c49a4a;
+  --accent-dim: #7a5f28;
+  --panel-bg: rgba(8, 10, 14, 0.88);
+  --panel-border: rgba(255, 255, 255, 0.07);
+  --text-primary: #e8e4dc;
+  --text-muted: #7c7870;
+
+  /* HUD text shadow — changes subtly per scene via JS */
+  --hud-shadow: 0 2px 18px rgba(0, 0, 0, 0.85), 0 0 40px rgba(0, 0, 0, 0.5);
+  --hud-color: rgba(240, 235, 225, 0.95);
+  --hud-sub-color: rgba(200, 195, 185, 0.75);
+}
+
+/* ── Base ── */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #07080a;
+  color: var(--text-primary);
+  font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ══════════════════════════════════════════════
+   WALLPAPER STAGE
+   ══════════════════════════════════════════════ */
+
+.stage {
+  position: fixed;
+  inset: 0;
+  background: #07080a;
+}
+
+/* Dual crossfade layers */
+.layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  /* transition removed — opacity is now driven directly by JS (rAF loop) */
+  pointer-events: none;
+  will-change: opacity;
+}
+
+.layer.is-visible {
+  opacity: 1;
+}
+
+/* All sub-elements fill the layer */
+.scene-fallback,
+.svg-scene,
+.svg-headlights,
+.scene-img,
+.headlight-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* Raster images: cover + center, hidden until loaded */
+.scene-img,
+.headlight-img {
+  object-fit: cover;
+  object-position: center;
+  display: none;
+}
+
+.svg-scene svg,
+.svg-headlights svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.scene-img.is-loaded {
+  display: block;
+}
+
+/* Headlights overlay — screen blend so black bg disappears */
+.svg-headlights.is-on,
+.headlight-img.is-on {
+  display: block;
+  mix-blend-mode: screen;
+  /* opacity set dynamically by JS based on headlight fade */
+}
+
+/* Align the massive headlights.jpg grille to perfectly overlay the car in scene.jpg */
+.headlight-img {
+  transform-origin: 36.6279% 39.388%;
+  transform: translate(19.186%, 39.0625%) scale(0.49107);
+}
+
+/* Colour-temperature overlay — sits above scene layers, below HUD */
+.ct-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+  /* background + opacity set dynamically by JS */
+  mix-blend-mode: multiply;
+  will-change: opacity, background;
+}
+
+/* ── Cinematic CSS fallbacks (no photo) ── */
+.scene-fallback[data-period="morning"] {
+  background:
+    radial-gradient(ellipse 60% 40% at 75% 15%, rgba(255, 220, 180, 0.4) 0%, transparent 55%),
+    radial-gradient(ellipse 40% 25% at 20% 60%, rgba(100, 140, 120, 0.25) 0%, transparent 50%),
+    linear-gradient(180deg, #6a8eaa 0%, #b8a898 30%, #8a9080 50%, #3a4238 70%, #1a1c18 100%);
+}
+
+.scene-fallback[data-period="day"] {
+  background:
+    radial-gradient(ellipse 35% 25% at 68% 10%, rgba(255, 255, 245, 0.5) 0%, transparent 50%),
+    linear-gradient(180deg, #4a7aaa 0%, #7090b0 25%, #6a8070 48%, #485840 65%, #2a2c28 100%);
+}
+
+.scene-fallback[data-period="goldenHour"] {
+  background:
+    radial-gradient(ellipse 55% 40% at 85% 20%, rgba(255, 150, 60, 0.65) 0%, transparent 55%),
+    radial-gradient(ellipse 70% 30% at 50% 55%, rgba(180, 90, 20, 0.3) 0%, transparent 60%),
+    linear-gradient(180deg, #8a2a0a 0%, #c4682c 22%, #aa5828 40%, #5a3820 62%, #1c1208 100%);
+}
+
+.scene-fallback[data-period="dusk"] {
+  background:
+    radial-gradient(ellipse 50% 30% at 78% 14%, rgba(255, 130, 70, 0.3) 0%, transparent 50%),
+    linear-gradient(180deg, #1a2040 0%, #2a2840 18%, #5a3858 32%, #2c1c28 55%, #0c0810 100%);
+}
+
+.scene-fallback[data-period="night"] {
+  background:
+    radial-gradient(ellipse 25% 18% at 65% 10%, rgba(160, 190, 230, 0.14) 0%, transparent 45%),
+    radial-gradient(ellipse 60% 20% at 30% 8%, rgba(80, 100, 140, 0.08) 0%, transparent 50%),
+    linear-gradient(180deg, #080c18 0%, #101624 28%, #0e1418 55%, #060808 100%);
+}
+
+/* ── Small Mountain Moon (Removed) ── */
+
+@keyframes moonPulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.1); opacity: 0.9; }
+}
+
+/* ── Scene label overlay (brief flash after transition in wallpaper mode) ── */
+.scene-label {
+  position: fixed;
+  bottom: 28px;
+  right: 28px;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity 0.6s ease, transform 0.6s ease;
+  pointer-events: none;
+}
+
+.scene-label.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.scene-label::before {
+  content: '';
+  display: block;
+  width: 28px;
+  height: 1px;
+  background: var(--accent);
+  opacity: 0.7;
+}
+
+#scene-label-text {
+  font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+}
+
+
+/* ══════════════════════════════════════════════
+   HUD — CLOCK · DATE · WEEKDAY
+   Top-centre, minimalist typography
+   ══════════════════════════════════════════════ */
+
+.hud {
+  position: fixed;
+  top: 40px;
+  /* Positioned cleanly at the top center */
+  left: 0;
+  right: 0;
+  z-index: 15;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  pointer-events: none;
+  opacity: 0.85; /* Increased opacity for premium glow */
+}
+
+/* Date — "THURSDAY, 24 SEPTEMBER 2026" */
+.hud-date {
+  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.80);
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.5);
+  margin-bottom: 2px;
+}
+
+/* Time — "08:00 PM" */
+.hud-time {
+  font-family: 'Orbitron', 'Rajdhani', monospace;
+  font-size: 88px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #ffffff;
+  text-shadow: 0 0 40px rgba(180, 220, 255, 0.35), 0 2px 12px rgba(0, 0, 0, 0.4);
+  line-height: 1;
+}
+
+.hud-widgets {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  pointer-events: auto;
+}
+
+.hud-widgets > * {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50px;
+  padding: 7px 14px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+  transition: background 0.2s ease;
+}
+
+.hud-widgets > *:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+
+/* ══════════════════════════════════════════════
+   VOLUMETRIC HEADLIGHT BEAMS
+   ══════════════════════════════════════════════ */
+
+.volumetric-lights {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0;
+  transition: opacity 2s ease;
+  mix-blend-mode: screen;
+}
+
+/* When script.js sets headlights to ON */
+.volumetric-lights.is-on {
+  opacity: 0.85;
+  /* Adjust based on fade logic if needed */
+}
+
+/* Actual Headlight Glow */
+.glow {
+  position: absolute;
+  top: 78.5%;
+  width: 2.5vw;
+  height: 2.5vw;
+  background: radial-gradient(circle, rgba(240, 248, 255, 0.4) 0%, rgba(200, 220, 255, 0.15) 20%, rgba(100, 150, 255, 0.05) 50%, transparent 70%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  filter: blur(2px);
+  z-index: 2;
+  box-shadow: 0 0 20px rgba(200, 230, 255, 0.3), 0 0 40px rgba(100, 150, 255, 0.1);
+}
+
+.glow-left {
+  left: 48%;
+}
+
+.glow-right {
+  left: 63%;
+}
+
+.beam {
+  position: absolute;
+  /* Origin anchor at the car's headlights */
+  top: 78.5%;
+  width: 45vw;
+  height: 55vh;
+  /* Beam spreading out towards the bottom left/right */
+  background: radial-gradient(ellipse at top center, rgba(200, 220, 255, 0.15) 0%, rgba(100, 150, 255, 0.05) 40%, transparent 70%);
+  transform-origin: top center;
+  filter: blur(10px);
+  z-index: 1;
+}
+
+.beam-left {
+  left: 48%;
+  transform: translateX(-50%) rotate(-35deg) perspective(600px) rotateX(65deg);
+}
+
+.beam-right {
+  left: 63%;
+  transform: translateX(-50%) rotate(-35deg) perspective(600px) rotateX(65deg);
+}
+
+/* ══════════════════════════════════════════════
+   CINEMATIC DUST PARTICLES (CANVAS)
+   ══════════════════════════════════════════════ */
+.particles-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 3s ease;
+  mix-blend-mode: screen;
+}
+
+.particles-canvas.is-on {
+  opacity: 1;
+}
+
+/* ══════════════════════════════════════════════
+   SCANLINES (Realistic CRT overlay)
+   ══════════════════════════════════════════════ */
+.scanlines {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 40;
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0),
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.04) 50%,
+    rgba(0, 0, 0, 0.04)
+  );
+  background-size: 100% 4px;
+  opacity: 0.6;
+}
+
+/* ══════════════════════════════════════════════
+   SIDE HUD (CONTROL PANEL) — Right side
+   ══════════════════════════════════════════════ */
+
+
+
+/* ══════════════════════════════════════════════
+   BATTERY WIDGET
+   ══════════════════════════════════════════════ */
+
+.battery-widget {
+  flex-direction: row-reverse;
+}
+
+.battery-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1.1;
+}
+
+.battery-pct {
+  font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.2);
+}
+
+.battery-status {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 2px;
+}
+
+.battery-status:empty {
+  display: none;
+}
+
+.battery-icon-wrap {
+  display: flex;
+  align-items: center;
+  gap: 1.5px;
+}
+
+.battery-body {
+  position: relative;
+  width: 28px;
+  height: 13px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.3);
+}
+
+.battery-fill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 1.5px 0 0 1.5px;
+  transition: width 1s ease, background 1s ease;
+}
+
+.battery-fill.is-low {
+  background: rgba(220, 60, 60, 0.85);
+  box-shadow: 0 0 8px rgba(220, 60, 60, 0.4);
+}
+
+.battery-fill.is-charging {
+  background: rgba(80, 210, 120, 0.85);
+  box-shadow: 0 0 8px rgba(80, 210, 120, 0.4);
+}
+
+.battery-tip {
+  width: 3px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 0 1.5px 1.5px 0;
+}
+
+/* ══════════════════════════════════════════════
+   SIDE CONTROLS — individual rounded square buttons (like reference image)
+   ══════════════════════════════════════════════ */
+
+.controls-right, .controls-left {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 20;
+  /* NO shared container background — each button is its own pill */
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.controls-right {
+  right: 20px;
+}
+
+.controls-left {
+  left: 20px;
+}
+
+.conn-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 52px;
+  max-width: 52px;
+  min-height: 52px;
+  max-height: 52px;
+  /* Each button is its own frosted glass square */
+  background: rgba(255, 255, 255, 0.18);
+  backdrop-filter: blur(16px) saturate(1.6);
+  -webkit-backdrop-filter: blur(16px) saturate(1.6);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  cursor: pointer;
+  border-radius: 16px;
+  transition: background 0.2s ease, transform 0.15s ease;
+  color: rgba(255, 255, 255, 0.90);
+  position: relative;
+  flex-shrink: 0;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.12);
+  padding: 0;
+  margin: 0;
+}
+
+.conn-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+  transform: scale(1.04);
+}
+
+.conn-btn:active {
+  transform: scale(0.95);
+}
+
+.conn-icon {
+  width: 22px;
+  height: 22px;
+  display: block;
+  flex-shrink: 0;
+  margin: 0 auto;
+  overflow: visible;
+  transition: color 0.3s ease, filter 0.3s ease;
+}
+
+.conn-label, .conn-status {
+  display: none;
+}
+
+/* On = active colour tint */
+.conn-btn.is-on .conn-icon {
+  color: rgba(80, 210, 150, 0.9);
+  filter: drop-shadow(0 0 6px rgba(80, 210, 150, 0.6));
+}
+.conn-btn.is-on .conn-status {
+  color: rgba(80, 210, 150, 0.9);
+}
+
+/* Off = dimmed */
+.conn-btn.is-off .conn-icon {
+  color: rgba(255, 255, 255, 0.25);
+}
+.conn-btn.is-off .conn-status {
+  color: rgba(255, 255, 255, 0.3);
+}
+
+/* ══════════════════════════════════════════════
+   CONNECTIVITY ICONS
+   ══════════════════════════════════════════════ */
+
+.icon {
+  width: 18px;
+  height: 18px;
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.5));
+  transition: color 0.3s ease, transform 0.2s ease, filter 0.3s ease;
+}
+
+.icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.clickable {
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.clickable:hover .icon {
+  color: rgba(255, 255, 255, 1);
+  transform: scale(1.1);
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.4));
+}
+
+.clickable:active .icon {
+  transform: scale(0.95);
+}
+
+.audio-widget {
+  flex-direction: row-reverse;
+}
+
+.audio-pct {
+  font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+#conn-audio {
+  justify-content: flex-end;
+}
+
+
+/* ══════════════════════════════════════════════
+   DEV PANEL — glassmorphism, bottom-left
+   ══════════════════════════════════════════════ */
+
+.dev-panel {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  z-index: 20;
+  width: min(370px, calc(100vw - 28px));
+  padding: 14px 16px 12px;
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 10px;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow:
+    0 4px 24px rgba(0, 0, 0, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  transition: opacity 0.25s ease, transform 0.25s ease;
+}
+
+.dev-panel.is-hidden {
+  display: none;
+}
+
+.dev-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.dev-brand {
+  font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--accent);
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.btn-icon:hover {
+  color: var(--text-primary);
+}
+
+.dev-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+
+.dev-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.dev-info-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.dev-info-value {
+  font-size: 12px;
+  color: var(--text-primary);
+  font-weight: 400;
+  text-align: right;
+}
+
+.mono {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+  letter-spacing: 0.04em;
+}
+
+.asset-status {
+  font-size: 11px;
+  color: #c4a15a;
+  min-height: 1em;
+  margin-bottom: 10px;
+  line-height: 1.4;
+  font-style: italic;
+}
+
+.asset-status:empty {
+  display: none;
+}
+
+.dev-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+
+.dev-buttons button {
+  background: rgba(255, 255, 255, 0.04);
+  color: #b0aca4;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  padding: 5px 9px;
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 0.03em;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.dev-buttons button:hover {
+  background: rgba(255, 255, 255, 0.09);
+  color: var(--text-primary);
+  border-color: rgba(255, 255, 255, 0.16);
+}
+
+.dev-buttons button.is-active {
+  background: rgba(196, 154, 74, 0.18);
+  border-color: var(--accent-dim);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.btn-auto {
+  margin-left: auto;
+}
+
+.hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+kbd {
+  display: inline-block;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-family: inherit;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+}
+
+/* ══════════════════════════════════════════════
+   RESTORE BUTTON (panel hidden state)
+   ══════════════════════════════════════════════ */
+
+.btn-restore {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  z-index: 20;
+  width: 34px;
+  height: 34px;
+  background: rgba(8, 10, 14, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: color 0.15s, background 0.15s;
+}
+
+.btn-restore.is-visible {
+  display: flex;
+}
+
+.btn-restore:hover {
+  color: var(--accent);
+  background: rgba(14, 16, 22, 0.92);
+}
+
+/* ══════════════════════════════════════════════
+   RESPONSIVE — 1366×768 primary, graceful elsewhere
+   ══════════════════════════════════════════════ */
+
+@media (max-width: 600px) {
+  .hud-time {
+    font-size: clamp(36px, 10vw, 56px);
+  }
+
+  .hud-date {
+    font-size: 13px;
+  }
+
+  .dev-panel {
+    left: 8px;
+    bottom: 8px;
+    padding: 12px 12px 10px;
+  }
+
+  .scene-label {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .hud {
+    padding-top: 14px;
+  }
+
+  .hud-brand {
+    display: none;
+  }
+}
+
+/* ══════════════════════════════════════════════
+   CINEMATIC STARTUP ANIMATIONS
+   ══════════════════════════════════════════════ */
+
+/* Audio unlock overlay */
+.audio-unlock {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  transition: opacity 0.4s ease;
+}
+
+.audio-unlock[aria-hidden="true"] {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.audio-unlock-content {
+  text-align: center;
+}
+
+.audio-unlock p {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.9);
+  margin-bottom: 16px;
+}
+
+#btn-start-engine {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  color: white;
+  padding: 10px 24px;
+  border-radius: 4px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+#btn-start-engine:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Ignition Headlight Flare */
+.headlight-flare {
+  animation: ignition-flare 0.4s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+}
+
+@keyframes ignition-flare {
+  0% {
+    opacity: 0;
+  }
+  30% {
+    opacity: 1;
+    filter: brightness(1.8) drop-shadow(0 0 20px rgba(255, 255, 255, 0.8));
+  }
+  100% {
+    opacity: 0.72;
+    filter: brightness(1) drop-shadow(0 0 0 transparent);
+  }
+}
+
+/* Engine Vibration (Shake) */
+.engine-shake {
+  animation: shake 1.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+}
+
+@keyframes shake {
+  0%, 100% { transform: translate(0, 0); }
+  10%, 30%, 50%, 70%, 90% { transform: translate(-2px, -3px) rotate(-0.5deg); }
+  20%, 40%, 60%, 80% { transform: translate(2px, 3px) rotate(0.5deg); }
+  25%, 75% { transform: translate(-3px, 1px) rotate(0.2deg); }
+  45%, 85% { transform: translate(3px, -1px) rotate(-0.2deg); }
+}
+
+/* Engine Idle Rumble (Continuous) */
+.engine-idle {
+  animation: idle-rumble 0.08s infinite alternate ease-in-out;
+}
+
+@keyframes idle-rumble {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(0.8px) translateX(0.3px); }
+}
+
+/* UI Glitch Effect on Startup */
+.ui-glitch {
+  animation: glitch 1.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) both;
+}
+
+@keyframes glitch {
+  0% { opacity: 0; transform: scale(1.05) skewX(20deg); filter: blur(4px) drop-shadow(5px 0 0 rgba(255,0,0,0.8)); }
+  10% { opacity: 1; transform: scale(1) skewX(0deg); filter: blur(0px); }
+  15% { transform: translate(-4px, 2px); filter: drop-shadow(-5px 0 0 rgba(0,255,255,0.8)); }
+  20% { transform: translate(4px, -2px); filter: drop-shadow(5px 0 0 rgba(255,0,255,0.8)); }
+  25% { transform: translate(0, 0); filter: drop-shadow(0 0 0 transparent); }
+  35% { opacity: 0.5; }
+  40% { opacity: 1; transform: skewX(-10deg); }
+  45% { transform: skewX(0); }
+  100% { opacity: 1; }
+}
+
+/* ══════════════════════════════════════════════
+   WEATHER WIDGET
+   ══════════════════════════════════════════════ */
+.weather-widget {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.weather-temp {
+  font-family: 'Rajdhani', 'Segoe UI', system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-shadow: 0 1px 4px rgba(0,0,0,0.8);
+}
+
+.weather-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.5));
+}
+.weather-icon svg {
+  width: 100%;
+  height: 100%;
+}

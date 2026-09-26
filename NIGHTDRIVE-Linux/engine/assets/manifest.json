@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "NIGHTDRIVE asset manifest — documents required and present image files.",
+  "version": "2.0.0",
+  "targetDisplay": "1366x768",
+  "periods": [
+    {
+      "id": "morning",
+      "label": "Morning",
+      "hours": "05:00–09:00",
+      "headlights": false,
+      "assets": {
+        "scene": {
+          "required": true,
+          "preferredPath": "assets/morning/scene.jpg",
+          "fallbackPath": "assets/morning/scene.svg",
+          "recommendedDimensions": "1366x768",
+          "description": "Cool blue-peach dawn light, mist in valley, pine trees, black Challenger, headlights OFF",
+          "status": "present"
+        }
+      }
+    },
+    {
+      "id": "day",
+      "label": "Day",
+      "hours": "09:00–16:00",
+      "headlights": false,
+      "assets": {
+        "scene": {
+          "required": true,
+          "preferredPath": "assets/day/scene.jpg",
+          "fallbackPath": "assets/day/scene.svg",
+          "recommendedDimensions": "1366x768",
+          "description": "Full daylight, clear blue sky, mountain peaks, green valley, Challenger headlights OFF",
+          "status": "present"
+        }
+      }
+    },
+    {
+      "id": "goldenHour",
+      "label": "Golden Hour",
+      "hours": "16:00–18:30",
+      "headlights": false,
+      "assets": {
+        "scene": {
+          "required": true,
+          "preferredPath": "assets/golden-hour/scene.jpg",
+          "fallbackPath": "assets/golden-hour/scene.svg",
+          "recommendedDimensions": "1366x768",
+          "description": "Warm amber/orange sun near horizon, dramatic shadows, rim-lit Challenger, headlights OFF",
+          "status": "present"
+        }
+      }
+    },
+    {
+      "id": "dusk",
+      "label": "Dusk",
+      "hours": "18:30–20:00",
+      "headlights": true,
+      "assets": {
+        "scene": {
+          "required": true,
+          "preferredPath": "assets/dusk/scene.jpg",
+          "fallbackPath": "assets/dusk/scene.svg",
+          "recommendedDimensions": "1366x768",
+          "description": "Deep blue/purple twilight, last glow on mountain peaks, Challenger body headlights OFF in base image",
+          "status": "present"
+        },
+        "headlights": {
+          "required": true,
+          "preferredPath": "assets/dusk/headlights.jpg",
+          "alternativePaths": ["assets/dusk/headlights.png", "assets/dusk/headlights.svg"],
+          "recommendedDimensions": "1366x768",
+          "blendMode": "screen",
+          "description": "Headlight beams overlay — applied on top of scene with screen blend mode. Background should be near-black.",
+          "note": "Currently uses a generic headlight beam image. Ideal: beams composited at the correct car position in the dusk scene.",
+          "status": "present (generic beam image — not position-matched)"
+        }
+      }
+    },
+    {
+      "id": "night",
+      "label": "Night",
+      "hours": "20:00–05:00",
+      "headlights": true,
+      "assets": {
+        "scene": {
+          "required": true,
+          "preferredPath": "assets/night/scene.jpg",
+          "fallbackPath": "assets/night/scene.svg",
+          "recommendedDimensions": "1366x768",
+          "description": "Dark mountain road, starry sky / Milky Way, Challenger barely visible, headlights OFF in base image",
+          "status": "present"
+        },
+        "headlights": {
+          "required": true,
+          "preferredPath": "assets/night/headlights.jpg",
+          "alternativePaths": ["assets/night/headlights.png", "assets/night/headlights.svg"],
+          "recommendedDimensions": "1366x768",
+          "blendMode": "screen",
+          "description": "Stronger headlight beam overlay for night — wider cone, brighter glow",
+          "note": "Currently uses a generic headlight beam image. Ideal: beams composited at the correct car position in the night scene.",
+          "status": "present (generic beam image — not position-matched)"
+        }
+      }
+    }
+  ],
+  "knownLimitations": [
+    "Headlight overlays are generic beam images, not composited to match the specific car position in each scene. Ideal replacement: Photoshop/GIMP composites using the actual scene as background.",
+    "Scene camera angles differ slightly between morning/day/goldenHour (front-facing car) and dusk/night (rear-facing car). A matched set would improve crossfade continuity.",
+    "Day scene contains a visible license plate area with text artifact from the AI generator — consider replacing with a clean crop."
+  ]
+}

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="NIGHTDRIVE — cinematic time-aware automotive wallpaper featuring a black Dodge Challenger on a winding mountain road." />
+  <title>NIGHTDRIVE</title>
+
+  <!-- Google Fonts: Orbitron for the clock, Rajdhani for brand/labels, Inter for UI -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@400;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+
+  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="themes.css?v=1" />
+</head>
+<body>
+
+  <!-- ══ WALLPAPER STAGE ══ Near-black background prevents white flashes. -->
+  <div id="stage" class="stage" aria-hidden="true">
+
+    <!-- Layer A — one of two crossfade layers -->
+    <div class="layer is-visible" data-layer="a">
+      <div class="scene-fallback" data-period="night"></div>
+      <div class="svg-scene"></div>
+      <img class="scene-img" alt="" loading="eager" />
+      <div class="svg-headlights"></div>
+      <img class="headlight-img" alt="" />
+    </div>
+
+    <!-- Layer B — the other crossfade layer -->
+    <div class="layer" data-layer="b">
+      <div class="scene-fallback" data-period="night"></div>
+      <div class="svg-scene"></div>
+      <img class="scene-img" alt="" loading="eager" />
+      <div class="svg-headlights"></div>
+      <img class="headlight-img" alt="" />
+    </div>
+
+    <!-- Volumetric Headlight Beams (SVG handles this responsively) -->
+
+    <!-- Cinematic Dust Particles -->
+    <canvas id="particles-canvas" class="particles-canvas" aria-hidden="true"></canvas>
+
+
+
+    <!-- CRT Scanlines / Realistic display overlay -->
+    <div class="scanlines" aria-hidden="true"></div>
+
+    <!-- Colour-temperature overlay — warms/cools the scene over time -->
+    <div id="ct-overlay" class="ct-overlay" aria-hidden="true"></div>
+
+    <!-- Scene label — fades in briefly after each transition in wallpaper mode -->
+    <div id="scene-label" class="scene-label" aria-hidden="true">
+      <span id="scene-label-text"></span>
+    </div>
+
+    <!-- Cinematic Night Moon (Removed) -->
+
+  </div><!-- /stage -->
+
+  <!-- ══ HUD: CLOCK & DATE ══ -->
+  <div id="hud" class="hud" aria-label="Clock and date">
+    <!-- Date line -->
+    <div id="hud-date" class="hud-date" aria-live="polite"></div>
+
+    <!-- Time line -->
+    <div id="hud-time" class="hud-time" aria-live="polite"></div>
+
+    <!-- Weather & Battery -->
+    <div class="hud-widgets">
+      <div id="weather-widget" class="weather-widget" aria-live="polite">
+        <div id="weather-icon" class="weather-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+        </div>
+        <div class="weather-temp-container">
+          <span id="weather-temp" class="weather-temp">--°C</span>
+        </div>
+      </div>
+
+      <div id="battery-widget" class="battery-widget" title="Battery" aria-live="polite">
+        <div class="battery-icon-wrap">
+          <div class="battery-body">
+            <div id="battery-fill" class="battery-fill"></div>
+          </div>
+          <div class="battery-tip"></div>
+        </div>
+        <div class="battery-text">
+          <span id="battery-pct" class="battery-pct">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- ══ CONTROLS LEFT ══ -->
+  <div id="controls-left" class="controls-left" aria-label="Network controls">
+    <!-- Wi-Fi -->
+    <button id="wifi-btn" class="conn-btn" title="Wi-Fi">
+      <svg class="conn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
+        <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
+        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
+        <circle cx="12" cy="20" r="1" fill="currentColor"/>
+      </svg>
+      <span id="wifi-label" class="conn-label">Wi-Fi</span>
+      <span id="wifi-status" class="conn-status">--</span>
+    </button>
+
+    <!-- Bluetooth -->
+    <button id="bt-btn" class="conn-btn" title="Bluetooth">
+      <svg class="conn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/>
+      </svg>
+      <span id="bt-label" class="conn-label">Bluetooth</span>
+      <span id="bt-status" class="conn-status">--</span>
+    </button>
+  </div>
+
+  <!-- ══ CONTROLS RIGHT ══ -->
+  <div id="controls-right" class="controls-right" aria-label="System controls">
+    <!-- Volume -->
+    <button id="conn-audio" class="conn-btn" title="Volume">
+      <svg class="conn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
+        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
+      </svg>
+      <span class="conn-label">Volume</span>
+      <span id="audio-pct" class="conn-status">—</span>
+    </button>
+
+    <!-- Focus Assist (Do Not Disturb) -->
+    <button id="focus-btn" class="conn-btn" title="Focus Assist">
+      <svg class="conn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+      </svg>
+      <span class="conn-label">Focus</span>
+      <span class="conn-status">Set</span>
+    </button>
+  </div>
+
+  <!-- ══ MODE SWITCHER ══ -->
+  <button id="theme-switcher-btn" class="theme-switcher-btn" title="Change Desktop Atmosphere">
+    <svg viewBox="0 0 24 24">
+      <path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.06-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.73,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.06,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.43-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.49-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6 s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/>
+    </svg>
+  </button>
+
+  <div id="theme-modal" class="theme-modal" aria-hidden="true">
+    <div class="theme-modal-content">
+      <h2>Desktop Atmosphere</h2>
+      <div class="theme-options">
+        <button class="theme-option" data-theme="windows">Windows Native (Default)</button>
+        <button class="theme-option" data-theme="linux">Linux Atmosphere</button>
+        <button class="theme-option" data-theme="macos">macOS Atmosphere</button>
+      </div>
+      <button id="theme-modal-close" class="theme-modal-close">Close</button>
+    </div>
+  </div>
+
+
+
+
+  <!-- ══ AUDIO & STARTUP ══ -->
+  <audio id="engine-audio" preload="auto" src="engine-start.wav">
+    <!-- Engine startup sound generated and added -->
+  </audio>
+
+  <script>
+    window.onerror = function(msg, url, line, col, error) {
+      var errDiv = document.createElement('div');
+      errDiv.style = 'position:fixed; top:20px; left:20px; z-index:9999; color:red; font-size:20px; background:black; padding:10px; border:2px solid red;';
+      errDiv.innerText = 'JS ERROR: ' + msg + '\\nLine: ' + line + '\\nFile: ' + url + '\\n' + (error ? error.stack : '');
+      document.body.appendChild(errDiv);
+    };
+  </script>
+  <script src="script.js?v=4"></script>
+</body>
+</html>

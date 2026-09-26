@@ -1,0 +1,154 @@
+/* THEME: macOS ATMOSPHERE */
+body[data-theme="macos"]::before {
+  content: " NIGHTDRIVE";
+  position: fixed;
+  top: 0; left: 0; right: 0; height: 28px;
+  background: rgba(30, 30, 30, 0.4);
+  backdrop-filter: blur(20px) saturate(1.5);
+  -webkit-backdrop-filter: blur(20px) saturate(1.5);
+  z-index: 900;
+  display: flex;
+  align-items: center;
+  padding-left: 16px;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+body[data-theme="macos"] .hud {
+  top: 4px; right: 16px; left: auto;
+  flex-direction: row; gap: 12px;
+  z-index: 901;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+body[data-theme="macos"] .hud-time, body[data-theme="macos"] .hud-date {
+  font-size: 13px; font-weight: 500; text-shadow: none;
+}
+
+body[data-theme="macos"] .hud-widgets {
+  top: 4px; right: 150px; left: auto; transform: none; margin-top: 0;
+  gap: 12px; z-index: 901; background: transparent; border: none; backdrop-filter: none;
+}
+body[data-theme="macos"] .hud-widgets > * {
+  background: transparent; border: none; backdrop-filter: none; padding: 0; box-shadow: none; font-size: 13px;
+}
+
+body[data-theme="macos"] .controls-left,
+body[data-theme="macos"] .controls-right {
+  top: 4px; transform: none; flex-direction: row; gap: 12px; z-index: 901;
+  background: transparent; border: none; backdrop-filter: none; padding: 0; box-shadow: none;
+}
+body[data-theme="macos"] .controls-right { right: 280px; }
+body[data-theme="macos"] .controls-left { right: 380px; left: auto; }
+
+body[data-theme="macos"] .conn-btn {
+  flex-direction: row; background: transparent; border: none; backdrop-filter: none; padding: 0; box-shadow: none; border-radius: 0;
+}
+body[data-theme="macos"] .conn-icon { width: 14px; height: 14px; }
+body[data-theme="macos"] .conn-label { display: none; }
+body[data-theme="macos"] .conn-status { display: none; }
+
+
+/* THEME: LINUX ATMOSPHERE (KDE/GNOME hybrid) */
+body[data-theme="linux"]::after {
+  content: "";
+  position: fixed;
+  bottom: 0; left: 0; right: 0; height: 42px;
+  background: rgba(15, 15, 15, 0.85);
+  backdrop-filter: blur(10px);
+  z-index: 900;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 -2px 10px rgba(0,0,0,0.5);
+}
+
+body[data-theme="linux"] .hud {
+  top: auto; bottom: 8px; right: 16px; left: auto;
+  flex-direction: row; gap: 8px; z-index: 901;
+}
+body[data-theme="linux"] .hud-time { font-size: 14px; font-family: "Ubuntu", "Segoe UI", sans-serif; font-weight: 500; }
+body[data-theme="linux"] .hud-date { display: none; /* Hide date to save space like some Linux panels */ }
+
+body[data-theme="linux"] .hud-widgets {
+  top: auto; bottom: 8px; right: 120px; left: auto; transform: none; margin-top: 0;
+  gap: 16px; z-index: 901; background: transparent; border: none; backdrop-filter: none;
+}
+body[data-theme="linux"] .hud-widgets > * {
+  background: transparent; border: none; backdrop-filter: none; padding: 0; box-shadow: none; font-size: 14px; font-family: "Ubuntu", sans-serif;
+}
+
+body[data-theme="linux"] .controls-left,
+body[data-theme="linux"] .controls-right {
+  top: auto; bottom: 8px; transform: none; flex-direction: row; gap: 16px; z-index: 901;
+  background: transparent; border: none; backdrop-filter: none; padding: 0; box-shadow: none;
+}
+body[data-theme="linux"] .controls-right { right: 250px; }
+body[data-theme="linux"] .controls-left { right: 340px; left: auto; }
+
+body[data-theme="linux"] .conn-btn {
+  flex-direction: row; background: transparent; border: none; backdrop-filter: none; padding: 0; box-shadow: none; border-radius: 0;
+}
+body[data-theme="linux"] .conn-icon { width: 16px; height: 16px; color: #ccc; }
+body[data-theme="linux"] .conn-label { display: none; }
+body[data-theme="linux"] .conn-status { display: none; }
+
+
+/* MODE SWITCHER UI */
+.theme-switcher-btn {
+  position: fixed;
+  bottom: 24px; left: 24px;
+  width: 48px; height: 48px;
+  border-radius: 24px;
+  background: rgba(20, 30, 40, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  color: white;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; z-index: 999;
+  transition: 0.3s ease;
+}
+.theme-switcher-btn:hover { background: rgba(40, 60, 80, 0.8); transform: scale(1.1); }
+.theme-switcher-btn svg { width: 24px; height: 24px; fill: currentColor; }
+
+body[data-theme="macos"] .theme-switcher-btn {
+  bottom: 30px; left: 50%; transform: translateX(-50%);
+  background: rgba(255,255,255,0.1); border-radius: 16px;
+}
+body[data-theme="linux"] .theme-switcher-btn {
+  bottom: 5px; left: 10px; width: 32px; height: 32px; border-radius: 6px;
+}
+
+.theme-modal {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(5px);
+  z-index: 1000;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 1; transition: opacity 0.3s ease;
+}
+.theme-modal[aria-hidden="true"] {
+  opacity: 0; pointer-events: none;
+}
+.theme-modal-content {
+  background: rgba(15, 20, 25, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 16px; padding: 30px; width: 340px;
+  box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+  color: white; font-family: "Inter", sans-serif;
+  text-align: center;
+}
+.theme-modal-content h2 { margin: 0 0 20px; font-size: 18px; font-weight: 500; }
+.theme-options { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; }
+.theme-option {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 14px; border-radius: 10px; color: white;
+  font-size: 15px; cursor: pointer; transition: 0.2s;
+}
+.theme-option:hover { background: rgba(255, 255, 255, 0.15); }
+.theme-option.active { border-color: #4a90e2; background: rgba(74, 144, 226, 0.2); }
+.theme-modal-close {
+  background: transparent; color: #aaa; border: none; font-size: 14px; cursor: pointer;
+}
+.theme-modal-close:hover { color: white; }
