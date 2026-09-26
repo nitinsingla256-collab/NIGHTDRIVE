@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1366 768" preserveAspectRatio="xMidYMid slice" role="img">
+  <title>PLACEHOLDER  golden hour mountain road, Challenger-inspired silhouette (not an official Dodge photo)</title>
+  <defs>
+    <linearGradient id="sky-golden" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#e07a32"/>
+      <stop offset="35%" stop-color="#f0b060"/>
+      <stop offset="100%" stop-color="#4a3020"/>
+    </linearGradient>
+    <linearGradient id="road-golden" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#2c2420"/>
+      <stop offset="100%" stop-color="#14110e"/>
+    </linearGradient>
+  </defs>
+  <rect width="1366" height="768" fill="url(#sky-golden)"/>
+  <ellipse cx="1120" cy="200" rx="120" ry="80" fill="#ffd080" opacity="0.9"/>
+  <path d="M0 410 L190 300 L350 370 L540 230 L740 330 L960 190 L1160 280 L1366 170 L1366 510 L0 510 Z" fill="#8a5a40"/>
+  <path d="M0 460 L230 340 L420 420 L640 290 L860 390 L1080 270 L1366 330 L1366 540 L0 540 Z" fill="#3a2a22"/>
+  <g fill="#1c1612">
+    <path d="M50 510 L90 380 L130 510 Z"/>
+    <path d="M120 518 L170 355 L220 518 Z"/>
+    <path d="M1140 508 L1190 340 L1240 508 Z"/>
+    <path d="M1230 518 L1285 350 L1340 518 Z"/>
+  </g>
+  <path d="M0 520 C 280 500, 430 620, 710 555 C 990 490, 1120 640, 1366 575 L1366 768 L0 768 Z" fill="url(#road-golden)"/>
+  <path d="M630 555 C 710 542, 790 595, 870 568" fill="none" stroke="#e8c070" stroke-width="4" stroke-dasharray="28 22" opacity="0.35"/>
+  <g transform="translate(430,515) scale(1.15)">
+    <ellipse cx="210" cy="92" rx="170" ry="18" fill="#000" opacity="0.4"/>
+    <path d="M40 70 L70 48 L150 42 L250 48 L320 62 L340 78 L330 88 L50 88 L30 80 Z" fill="#0c0c0d"/>
+    <path d="M95 48 L120 22 L210 22 L255 48 Z" fill="#141210"/>
+    <path d="M128 26 L205 26 L238 46 L150 46 Z" fill="#c07040" opacity="0.35"/>
+    <circle cx="95" cy="88" r="22" fill="#151515" stroke="#3a3028" stroke-width="3"/>
+    <circle cx="275" cy="88" r="22" fill="#151515" stroke="#3a3028" stroke-width="3"/>
+    <rect x="48" y="70" width="14" height="8" fill="#c08040"/>
+    <rect x="300" y="68" width="16" height="8" fill="#c08040"/>
+  </g>
+</svg>
