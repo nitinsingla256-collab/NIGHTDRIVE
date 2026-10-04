@@ -13,6 +13,10 @@ def main():
 
     print("--- Building NIGHTDRIVE for macOS ---")
     
+    # Always work relative to this script, regardless of the current directory
+    here = os.path.dirname(os.path.abspath(__file__))
+    os.chdir(here)
+
     app_name = "NIGHTDRIVE.app"
     contents_dir = os.path.join(app_name, "Contents")
     macos_dir = os.path.join(contents_dir, "MacOS")
@@ -60,7 +64,7 @@ def main():
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0</string>
+    <string>1.1.0</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.15</string>
     <key>LSUIElement</key>
@@ -73,15 +77,11 @@ def main():
     print("Generated Info.plist")
 
     # 4. Copy the web engine into the Resources folder
-    engine_src = os.path.join("..", "..", "..", "engine")
+    engine_src = os.path.join(here, "..", "..", "engine")
     engine_dest = os.path.join(resources_dir, "engine")
-    
-    if not os.path.exists(engine_src):
-        # Fallback to local engine copy if running from flat directory
-        engine_src = os.path.join("..", "..", "engine")
-        if not os.path.exists(engine_src):
-            print(f"ERROR: Could not find engine directory at {engine_src}")
-            sys.exit(1)
+    if not os.path.isfile(os.path.join(engine_src, "index.html")):
+        print(f"ERROR: Could not find engine/index.html at {os.path.abspath(engine_src)}")
+        sys.exit(1)
         
     if os.path.exists(engine_dest):
         shutil.rmtree(engine_dest)

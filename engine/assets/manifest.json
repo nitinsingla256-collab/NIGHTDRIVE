@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "NIGHTDRIVE asset manifest — documents required and present image files.",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "targetDisplay": "1366x768",
   "periods": [
     {
@@ -68,8 +68,10 @@
         },
         "headlights": {
           "required": true,
-          "preferredPath": "assets/dusk/headlights.jpg",
-          "alternativePaths": ["assets/dusk/headlights.png", "assets/dusk/headlights.svg"],
+          "preferredPath": "assets/dusk/headlights.svg",
+          "alternativePaths": [
+            "assets/dusk/headlights.jpg"
+          ],
           "recommendedDimensions": "1366x768",
           "blendMode": "screen",
           "description": "Headlight beams overlay — applied on top of scene with screen blend mode. Background should be near-black.",
@@ -81,7 +83,7 @@
     {
       "id": "night",
       "label": "Night",
-      "hours": "20:00–05:00",
+      "hours": "20:00–00:00",
       "headlights": true,
       "assets": {
         "scene": {
@@ -94,13 +96,40 @@
         },
         "headlights": {
           "required": true,
-          "preferredPath": "assets/night/headlights.jpg",
-          "alternativePaths": ["assets/night/headlights.png", "assets/night/headlights.svg"],
+          "preferredPath": "assets/night/headlights.svg",
+          "alternativePaths": [
+            "assets/night/headlights.jpg"
+          ],
           "recommendedDimensions": "1366x768",
           "blendMode": "screen",
           "description": "Stronger headlight beam overlay for night — wider cone, brighter glow",
           "note": "Currently uses a generic headlight beam image. Ideal: beams composited at the correct car position in the night scene.",
           "status": "present (generic beam image — not position-matched)"
+        }
+      }
+    },
+    {
+      "id": "midnight",
+      "label": "Midnight",
+      "hours": "00:00–05:00",
+      "headlights": true,
+      "assets": {
+        "scene": {
+          "required": true,
+          "preferredPath": "assets/midnight/scene.jpg",
+          "recommendedDimensions": "1366x768",
+          "description": "Deepest night, cold blue/black tones, headlights ON",
+          "status": "present"
+        },
+        "headlights": {
+          "required": true,
+          "preferredPath": "assets/midnight/headlights.svg",
+          "alternativePaths": [
+            "assets/midnight/headlights.jpg"
+          ],
+          "recommendedDimensions": "1366x768",
+          "blendMode": "screen",
+          "status": "present"
         }
       }
     }

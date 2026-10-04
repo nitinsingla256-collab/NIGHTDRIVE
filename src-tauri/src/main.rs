@@ -1,39 +1,48 @@
 #![cfg_attr(
-  all(not(debug_assertions), target_os = "windows"),
-  windows_subsystem = "windows"
+    all(not(debug_assertions), target_os = "windows"),
+    windows_subsystem = "windows"
 )]
 
 use tauri::Manager;
 
 fn main() {
-  tauri::Builder::default()
-    .setup(|app| {
-      let window = app.get_window("main").unwrap();
+    tauri::Builder::default()
+        .setup(|app| {
+            let window = app
+                .get_window("main")
+                .expect("window with label \"main\" is defined in tauri.conf.json");
 
-      #[cfg(target_os = "macos")]
-      {
-          use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior, NSWindowLevel};
-          use cocoa::base::id;
-          let ns_window = window.ns_window().unwrap() as id;
-          unsafe {
-              // Set to Desktop level
-              ns_window.setLevel_((NSWindowLevel::CGDesktopWindowLevel - 1) as i64);
-              // Make sure it doesn't move with Spaces/Expose
-              ns_window.setCollectionBehavior_(NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle);
-          }
-      }
+            // macOS: pin the window to the desktop layer (behind icons) on every Space.
+            #[cfg(target_os = "macos")]
+            {
+                use cocoa::appkit::{NSWindow, NSWindowCollectionBehavior};
+                use cocoa::base::id;
 
-      #[cfg(target_os = "linux")]
-      {
-          // On Linux (X11), we could use xwininfo and xdotool to reparent the window to the root window (desktop), 
-          // or set X11 window hints _NET_WM_WINDOW_TYPE_DESKTOP.
-          // Tauri doesn't have a direct wrapper for setting X11 hints yet natively without external crates like x11rb.
-          // We print instructions for Linux users to use a helper script or rely on Wayland wallpaper daemons.
-          println!("Linux: To run as a wallpaper, use a tool like xwinwrap or set X11 properties.");
-      }
+                // kCGDesktopWindowLevel = kCGMinimumWindowLevel + 20
+                const DESKTOP_WINDOW_LEVEL: i64 = i32::MIN as i64 + 20;
 
-      Ok(())
-    })
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+                if let Ok(ptr) = window.ns_window() {
+                    let ns_window = ptr as id;
+                    unsafe {
+                        ns_window.setLevel_(DESKTOP_WINDOW_LEVEL);
+                        ns_window.setCollectionBehavior_(
+                            NSWindowCollectionBehavior::NSWindowCollectionBehaviorCanJoinAllSpaces
+                                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorStationary
+                                | NSWindowCollectionBehavior::NSWindowCollectionBehaviorIgnoresCycle,
+                        );
+                    }
+                }
+            }
+
+            // Windows / Linux: Tauri v1 has no desktop-layer API. The window runs
+            // fullscreen and borderless; for a true behind-the-icons wallpaper use
+            // the native Linux host (hosts/linux) or a wallpaper manager such as
+            // Lively Wallpaper (Windows) pointed at engine/index.html.
+            #[cfg(not(target_os = "macos"))]
+            let _ = &window;
+
+            Ok(())
+        })
+        .run(tauri::generate_context!())
+        .expect("error while running NIGHTDRIVE");
 }

@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Tauri / Rust build output
+src-tauri/target/
+src-tauri/WixTools/
+Cargo.lock
+
+# macOS host build output
+hosts/macos/NIGHTDRIVE.app/
+
+# Python
+__pycache__/
+*.pyc
+
+# Release packaging
+dist/
+release/
+*.zip
+
+# OS / editor
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+*.log

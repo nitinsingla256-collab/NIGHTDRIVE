@@ -28,6 +28,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         let config = WKWebViewConfiguration()
         config.mediaTypesRequiringUserActionForPlayback = [] // Allow audio autoplay
         config.userContentController.add(self, name: "nightdrive")
+        // Engine loads its SVG scenes via XHR from file:// — allow it.
+        config.preferences.setValue(true, forKey: "allowFileAccessFromFileURLs")
         
         let webView = WKWebView(frame: screen.frame, configuration: config)
         
@@ -53,9 +55,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let msgStr = message.body as? String else { return }
         
-        // Currently, macOS doesn't integrate with native Wi-Fi/Volume via IPC due to App Sandbox limits,
-        // but this bridge allows future expansion or logging.
-        if msgStr.contains("hide_fallback") {
+        // Side buttons open the matching System Settings pane.
+        let panes: [String: String] = [
+            "open_wifi_settings":  "x-apple.systempreferences:com.apple.preference.network",
+            "open_bt_settings":    "x-apple.systempreferences:com.apple.preferences.Bluetooth",
+            "open_sound_settings": "x-apple.systempreferences:com.apple.preference.sound",
+            "open_focus_settings": "x-apple.systempreferences:com.apple.preference.notifications"
+        ]
+        if let action = panes.keys.first(where: { msgStr.contains($0) }),
+           let url = URL(string: panes[action]!) {
+            NSWorkspace.shared.open(url)
+        } else if msgStr.contains("hide_fallback") {
             print("[macOS Host] Engine reported ready.")
         } else if msgStr.contains("log_time") {
             print("[macOS Host Log] \(msgStr)")

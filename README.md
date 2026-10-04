@@ -1,27 +1,89 @@
 # NIGHTDRIVE
-A cinematic dynamic desktop wallpaper that smoothly transforms through sunrise, day, golden hour, dusk, night, and midnight in real local time.
-## Screenshots
 
-### Sunrise
+A cinematic, time-aware desktop wallpaper. A black muscle car on a winding mountain road
+smoothly transforms through **sunrise → day → golden hour → dusk → night → midnight**
+following your real local time, with a live HUD (clock, date, weather, battery) and quick
+system controls.
 
-![NIGHTDRIVE Sunrise](./docs/screenshots/sunrise.png)
+![CI](https://github.com/nitinsingla256-collab/NIGHTDRIVE/actions/workflows/ci.yml/badge.svg)
 
-### Day
+| Sunrise | Day | Golden Hour |
+|---|---|---|
+| ![Sunrise](docs/screenshots/sunrise.png) | ![Day](docs/screenshots/day.png) | ![Golden Hour](docs/screenshots/golden-hour.png) |
+| **Dusk** | **Night** | **Midnight** |
+| ![Dusk](docs/screenshots/dusk.png) | ![Night](docs/screenshots/night.png) | ![Midnight](docs/screenshots/midnight.png) |
 
-![NIGHTDRIVE Day](./docs/screenshots/day.png)
+## Features
 
-### Golden Hour
+- **Real-time scene blending**: 20-minute crossfades between six periods, with headlights fading in at dusk.
+- **HUD**: clock, date, live weather (Open-Meteo), battery level and charging state.
+- **Quick controls**: Wi-Fi, Bluetooth, Volume, Focus. These open the matching OS settings page on Windows and macOS.
+- **Desktop atmospheres**: Windows, macOS and Linux styling. The default follows your OS and your choice is remembered.
+- **Works on all screen sizes**: desktop, laptop, 4K, tablet and phone (portrait and landscape). Handles notches and safe areas.
+- **Accessible**: keyboard navigable, visible focus, labelled controls, Esc closes dialogs. Respects *Reduce Motion* and Windows High Contrast.
+- **No build step**: plain HTML/CSS/JS in [`engine/`](engine/).
 
-![NIGHTDRIVE Golden Hour](./docs/screenshots/golden-hour.png)
+## Quick start (any device, in a browser)
 
-### Dusk
+```bash
+git clone https://github.com/nitinsingla256-collab/NIGHTDRIVE.git
+cd NIGHTDRIVE
+npm start            # serves engine/ at http://localhost:8080
+```
 
-![NIGHTDRIVE Dusk](./docs/screenshots/dusk.png)
+No Node? Any static server works, e.g. `python3 -m http.server 8080 -d engine`.
+Open it fullscreen (F11) for the full wallpaper experience.
 
-### Night
+## Run as a desktop wallpaper
 
-![NIGHTDRIVE Night](./docs/screenshots/night.png)
+| Platform | Host | How |
+|---|---|---|
+| **Windows 10/11** | [Lively Wallpaper](https://www.rocksdanister.com/lively/) | *Add Wallpaper* → choose `engine/index.html` |
+| **Windows / macOS / Linux** | Tauri app ([`src-tauri/`](src-tauri/)) | `npm install && npm run tauri:build` (needs [Rust + Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites)) |
+| **macOS** | Native Swift host ([`hosts/macos/`](hosts/macos/)) | `python3 hosts/macos/build_macos.py` → `open hosts/macos/NIGHTDRIVE.app` (renders behind desktop icons on all monitors) |
+| **Linux (X11)** | PyQt host ([`hosts/linux/`](hosts/linux/)) | `bash hosts/linux/install-linux.sh` (installs deps, menu entry and autostart) |
 
-### Midnight
+### What each feature needs
 
-![NIGHTDRIVE Midnight](./docs/screenshots/midnight.png)
+| Feature | Browser / Lively | Windows NightdriveHost (release zip) | macOS host | Linux host |
+|---|---|---|---|---|
+| Scenes, clock, themes | ✅ | ✅ | ✅ | ✅ |
+| Weather | ✅ (location permission or IP fallback) | ✅ | ✅ | ✅ |
+| Battery | Chromium browsers only | ✅ | Chromium-only API* | ✅ (psutil) |
+| Settings buttons | Windows only | ✅ | ✅ | indicator only |
+
+\* Safari/WebKit doesn't expose battery info, so the widget shows *N/A*.
+
+## Project structure
+
+```
+NIGHTDRIVE/
+├── engine/                 # The wallpaper itself (shared by every host)
+│   ├── index.html
+│   ├── script.js           # time engine, HUD, weather, battery, controls
+│   ├── styles.css          # layout, responsive & accessibility rules
+│   ├── themes.css          # Windows / macOS / Linux atmospheres
+│   └── assets/             # per-period scenes + headlight overlays (see assets/README.md)
+├── hosts/
+│   ├── linux/              # PyQt5 X11 desktop host + installer
+│   └── macos/              # Swift/WKWebView desktop-level host + build script
+├── src-tauri/              # Cross-platform Tauri v1 host
+├── scripts/                # serve.mjs (dev server), validate.mjs (tests)
+├── docs/screenshots/
+└── .github/workflows/ci.yml
+```
+
+## Customising
+
+- **Times and transitions**: edit `PERIODS` at the top of [`engine/script.js`](engine/script.js).
+- **Images**: replace files in `engine/assets/<period>/`. See [`engine/assets/README.md`](engine/assets/README.md).
+- **Startup sound**: drop an audio file into `engine/` and set `src` on the `<audio id="engine-audio">` tag.
+
+## Development
+
+```bash
+npm test     # validates engine files, asset paths and host configs (also runs in CI)
+npm start    # local preview
+```
+
+See [CHANGELOG.md](CHANGELOG.md) for release notes.

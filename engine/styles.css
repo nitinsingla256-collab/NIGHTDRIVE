@@ -980,3 +980,94 @@ kbd {
   width: 100%;
   height: 100%;
 }
+/* ══════════════════════════════════════════════
+   ALL-DEVICE LAYOUT
+   Phones, tablets, ultrawide, notches, touch & keyboard users
+   ══════════════════════════════════════════════ */
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
+/* Fluid clock across all screen sizes */
+.hud-time { font-size: clamp(44px, 9vw, 112px); }
+.hud { top: max(40px, calc(env(safe-area-inset-top) + 16px)); }
+.controls-left  { left:  max(20px, calc(env(safe-area-inset-left) + 12px)); }
+.controls-right { right: max(20px, calc(env(safe-area-inset-right) + 12px)); }
+
+/* Visible keyboard focus */
+.conn-btn:focus-visible,
+.theme-switcher-btn:focus-visible,
+.theme-option:focus-visible,
+.theme-modal-close:focus-visible {
+  outline: 2px solid #8ec5ff;
+  outline-offset: 3px;
+}
+
+/* Touch devices: no sticky hover scaling */
+@media (hover: none) {
+  .conn-btn:hover, .theme-switcher-btn:hover { transform: none; }
+}
+
+/* Phones (portrait): side controls move into a bottom dock */
+@media (max-width: 600px) {
+  .hud { top: max(28px, calc(env(safe-area-inset-top) + 12px)); }
+  .hud-date { font-size: 11px; letter-spacing: 0.14em; text-align: center; padding: 0 12px; }
+  .hud-widgets { flex-wrap: wrap; justify-content: center; }
+
+  .controls-left, .controls-right {
+    top: auto;
+    transform: none;
+    flex-direction: row;
+    bottom: max(20px, calc(env(safe-area-inset-bottom) + 12px));
+  }
+  .controls-left  { left: 50%;  margin-left: -116px; }
+  .controls-right { right: 50%; margin-right: -116px; }
+  .conn-btn { min-width: 48px; max-width: 48px; min-height: 48px; max-height: 48px; border-radius: 14px; }
+
+  body[data-theme] .theme-switcher-btn {
+    top: max(12px, calc(env(safe-area-inset-top) + 8px));
+    bottom: auto;
+    left: auto;
+    right: max(12px, calc(env(safe-area-inset-right) + 8px));
+    transform: none;
+    width: 40px; height: 40px;
+  }
+  .theme-modal-content { width: min(340px, calc(100vw - 32px)); padding: 24px 20px; }
+}
+
+/* Short landscape screens (phones sideways) */
+@media (max-height: 480px) and (orientation: landscape) {
+  .hud { top: 12px; }
+  .hud-time { font-size: clamp(36px, 12vh, 64px); }
+  .hud-widgets { margin-top: 6px; }
+  .conn-btn { min-width: 42px; max-width: 42px; min-height: 42px; max-height: 42px; }
+  .controls-left, .controls-right { gap: 6px; }
+}
+
+/* Large / 4K displays */
+@media (min-width: 2200px) {
+  .hud-date { font-size: 18px; }
+  .hud-time { font-size: 140px; }
+  .conn-btn { min-width: 64px; max-width: 64px; min-height: 64px; max-height: 64px; }
+  .conn-icon { width: 28px; height: 28px; }
+}
+
+/* Respect OS "reduce motion" */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .particles-canvas, .scanlines { display: none; }
+}
+
+/* High-contrast / forced colors (Windows) */
+@media (forced-colors: active) {
+  .conn-btn, .theme-switcher-btn, .theme-option { border: 1px solid ButtonText; }
+}
