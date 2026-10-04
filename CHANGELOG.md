@@ -6,6 +6,26 @@
 - MIT LICENSE (© 2026 Nitin Singla).
 - Offline support: `engine/sw.js` service worker (cache `nightdrive-v1.3.1`) pre-caches the page, styles, script and every scene/headlight asset, registered from `engine/index.html`. External fonts and weather APIs stay network-only.
 - `npm test` now validates the service worker: cache name, pre-cached files exist, and the registration in `index.html`.
+## [1.3.1] - 2026-10-04
+
+### Removed
+- The per-OS theme system: `engine/themes.css`, the atmosphere switcher button and dialog, the mode-switcher logic in `script.js`, and the theme rules in `styles.css`.
+
+### Changed
+- All platforms show the same look — the wallpaper no longer mimics Windows, macOS or Linux desktop chrome, so every host renders the identical scene and HUD.
+
+## [1.2.0] - 2026-10-04
+
+### Added
+- Windows host source (`hosts/windows/NightdriveHost/`): .NET 8 WPF + WebView2 wallpaper window, tray icon, and battery / Wi-Fi / Bluetooth / volume bridges.
+- `engine/engine-start.wav` plus an ignition sound wired into the startup sequence (falls back to the first click when a browser blocks autoplay).
+- `engine/assets/moon.jpg` restored from the cross-platform source bundle — still unreferenced, kept as a source asset.
+- `.github/`: release workflow (source bundle + signed-out Windows host published to Releases on `v*` tags), issue templates (bug / feature) and a pull-request template.
+- CI now compiles the Windows host on `windows-latest` and checks the host XML files.
+
+### Changed
+- `.gitignore` covers Windows host build output (`bin/`, `obj/`, `*.user`, `.vs/`); `.gitattributes` marks native binaries; `.editorconfig` gained C# / XAML / csproj rules.
+- `npm test` additionally validates the Windows host project and the ignition asset.
 
 ## [1.1.0] - 2026-10-04
 

@@ -15,9 +15,32 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - name: Engine checks
+      - name: Engine, hosts & asset checks
         run: npm test
       - name: Python hosts compile
         run: python3 -m py_compile hosts/linux/nightdrive.py hosts/macos/build_macos.py
       - name: Shell scripts
         run: bash -n hosts/linux/install-linux.sh
+      - name: XML host files parse
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as ET
+          for f in ["hosts/windows/NightdriveHost/NightdriveHost.csproj",
+                    "hosts/windows/NightdriveHost/App.xaml",
+                    "hosts/windows/NightdriveHost/MainWindow.xaml",
+                    "hosts/windows/NightdriveHost/app.manifest"]:
+              ET.parse(f)
+              print("ok", f)
+          PY
+
+  windows-host:
+    name: Build Windows host
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Build NightdriveHost
+        working-directory: hosts/windows/NightdriveHost
+        run: dotnet build NightdriveHost.csproj -c Release

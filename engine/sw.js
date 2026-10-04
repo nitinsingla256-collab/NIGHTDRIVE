@@ -17,7 +17,7 @@ const PRECACHE_URLS = [
   './index.html',
   './script.js',
   './styles.css',
-  './themes.css',
+  './engine-start.wav',
   './assets/morning/scene.jpg',
   './assets/morning/scene.svg',
   './assets/day/scene.jpg',
