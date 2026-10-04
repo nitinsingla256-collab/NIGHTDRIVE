@@ -4,3 +4,8 @@
 *.ico binary
 *.icns binary
 *.wav binary
+*.dll binary
+*.exe binary
+*.pdb binary
+*.so binary
+*.dylib binary

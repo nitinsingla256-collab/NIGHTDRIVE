@@ -9,6 +9,13 @@ Cargo.lock
 # macOS host build output
 hosts/macos/NIGHTDRIVE.app/
 
+# Windows host (.NET) build output
+hosts/windows/**/bin/
+hosts/windows/**/obj/
+*.user
+*.suo
+.vs/
+
 # Python
 __pycache__/
 *.pyc

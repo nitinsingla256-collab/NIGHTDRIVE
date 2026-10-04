@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Getting started & requirements
+    url: https://github.com/nitinsingla256-collab/NIGHTDRIVE#quick-start-any-device-in-a-browser
+    about: How to run the engine in a browser and how to install each desktop host.
+  - name: Tauri prerequisites
+    url: https://tauri.app/v1/guides/getting-started/prerequisites
+    about: Needed before `npm run tauri:build` will work.
