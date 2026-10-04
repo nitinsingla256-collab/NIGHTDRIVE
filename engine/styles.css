@@ -1000,17 +1000,14 @@ html, body {
 .controls-right { right: max(20px, calc(env(safe-area-inset-right) + 12px)); }
 
 /* Visible keyboard focus */
-.conn-btn:focus-visible,
-.theme-switcher-btn:focus-visible,
-.theme-option:focus-visible,
-.theme-modal-close:focus-visible {
+.conn-btn:focus-visible {
   outline: 2px solid #8ec5ff;
   outline-offset: 3px;
 }
 
 /* Touch devices: no sticky hover scaling */
 @media (hover: none) {
-  .conn-btn:hover, .theme-switcher-btn:hover { transform: none; }
+  .conn-btn:hover { transform: none; }
 }
 
 /* Phones (portrait): side controls move into a bottom dock */
@@ -1028,16 +1025,6 @@ html, body {
   .controls-left  { left: 50%;  margin-left: -116px; }
   .controls-right { right: 50%; margin-right: -116px; }
   .conn-btn { min-width: 48px; max-width: 48px; min-height: 48px; max-height: 48px; border-radius: 14px; }
-
-  body[data-theme] .theme-switcher-btn {
-    top: max(12px, calc(env(safe-area-inset-top) + 8px));
-    bottom: auto;
-    left: auto;
-    right: max(12px, calc(env(safe-area-inset-right) + 8px));
-    transform: none;
-    width: 40px; height: 40px;
-  }
-  .theme-modal-content { width: min(340px, calc(100vw - 32px)); padding: 24px 20px; }
 }
 
 /* Short landscape screens (phones sideways) */
@@ -1069,5 +1056,5 @@ html, body {
 
 /* High-contrast / forced colors (Windows) */
 @media (forced-colors: active) {
-  .conn-btn, .theme-switcher-btn, .theme-option { border: 1px solid ButtonText; }
+  .conn-btn { border: 1px solid ButtonText; }
 }

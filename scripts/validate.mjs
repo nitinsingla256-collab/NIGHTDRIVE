@@ -13,7 +13,7 @@ const fail = (msg) => { console.error('  ✗ ' + msg); failures++; };
 const check = (cond, msg) => (cond ? ok(msg) : fail(msg));
 
 console.log('Engine files');
-for (const f of ['index.html', 'script.js', 'styles.css', 'themes.css']) check(existsSync(join(engine, f)), f);
+for (const f of ['index.html', 'script.js', 'styles.css']) check(existsSync(join(engine, f)), f);
 
 console.log('index.html references');
 const html = readFileSync(join(engine, 'index.html'), 'utf8');

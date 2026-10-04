@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.1] - 2026-10-04
+
+### Removed
+- The per-OS theme system: `engine/themes.css`, the atmosphere switcher button and dialog, the mode-switcher logic in `script.js`, and the theme rules in `styles.css`.
+
+### Changed
+- All platforms show the same look — the wallpaper no longer mimics Windows, macOS or Linux desktop chrome, so every host renders the identical scene and HUD.
+
 ## [1.2.0] - 2026-10-04
 
 ### Added

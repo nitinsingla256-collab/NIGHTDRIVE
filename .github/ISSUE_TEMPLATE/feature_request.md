@@ -15,7 +15,7 @@ labels: enhancement
 
 ## Which part of the project does it touch?
 
-- [ ] Engine (scenes, HUD, controls, themes)
+- [ ] Engine (scenes, HUD, controls)
 - [ ] Desktop hosts (Windows / macOS / Linux / Tauri)
 - [ ] Assets or build tooling
 - [ ] Docs

@@ -48,7 +48,7 @@ Open it fullscreen (F11) for the full wallpaper experience.
 
 | Feature | Browser / Lively | Windows host | macOS host | Linux host |
 |---|---|---|---|---|
-| Scenes, clock, themes | ✅ | ✅ | ✅ | ✅ |
+| Scenes, clock | ✅ | ✅ | ✅ | ✅ |
 | Weather | ✅ (location permission or IP fallback) | ✅ | ✅ | ✅ |
 | Battery | Chromium browsers only | ✅ | Chromium-only API* | ✅ (psutil) |
 | Settings buttons | Windows only | ✅ | ✅ | indicator only |
@@ -63,7 +63,6 @@ NIGHTDRIVE/
 │   ├── index.html
 │   ├── script.js           # time engine, HUD, weather, battery, controls
 │   ├── styles.css          # layout, responsive & accessibility rules
-│   ├── themes.css          # Windows / macOS / Linux atmospheres
 │   ├── engine-start.wav    # ignition sound played with the startup sequence
 │   └── assets/             # per-period scenes + headlight overlays (see assets/README.md)
 ├── hosts/
