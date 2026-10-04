@@ -145,5 +145,17 @@
   <audio id="engine-audio" preload="auto" src="engine-start.wav"></audio>
 
   <script src="script.js?v=5"></script>
+
+  <!-- ══ OFFLINE SUPPORT ══ Service worker pre-caches the engine (see sw.js).
+       Ignored by file:// and other insecure contexts — the app just runs online. -->
+  <script>
+    if ('serviceWorker' in navigator && window.isSecureContext) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (err) {
+          console.warn('[NIGHTDRIVE] Service worker registration failed:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

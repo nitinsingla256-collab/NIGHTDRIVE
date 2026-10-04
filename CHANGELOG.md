@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- MIT LICENSE (© 2026 Nitin Singla).
+- Offline support: `engine/sw.js` service worker (cache `nightdrive-v1.3.1`) pre-caches the page, styles, script and every scene/headlight asset, registered from `engine/index.html`. External fonts and weather APIs stay network-only.
+- `npm test` now validates the service worker: cache name, pre-cached files exist, and the registration in `index.html`.
+
 ## [1.3.1] - 2026-10-04
 
 ### Removed
