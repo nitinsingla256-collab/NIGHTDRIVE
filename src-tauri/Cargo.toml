@@ -1,19 +1,19 @@
 [package]
 name = "nightdrive-host"
-version = "1.0.0"
-description = "Cross-platform host for NIGHTDRIVE"
-authors = ["you"]
+version = "1.1.0"
+description = "Cross-platform desktop host for NIGHTDRIVE"
+authors = ["nitinsingla256-collab"]
 license = ""
-repository = ""
+repository = "https://github.com/nitinsingla256-collab/NIGHTDRIVE"
 default-run = "nightdrive-host"
 edition = "2021"
-rust-version = "1.59"
+rust-version = "1.60"
 
 [build-dependencies]
-tauri-build = { version = "1.5.0", features = [] }
+tauri-build = { version = "1.5", features = [] }
 
 [dependencies]
-tauri = { version = "1.5.0", features = ["shell-all"] }
+tauri = { version = "1.5", features = ["shell-open"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 

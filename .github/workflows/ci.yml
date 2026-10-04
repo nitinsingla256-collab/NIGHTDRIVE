@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate engine & hosts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Engine checks
+        run: npm test
+      - name: Python hosts compile
+        run: python3 -m py_compile hosts/linux/nightdrive.py hosts/macos/build_macos.py
+      - name: Shell scripts
+        run: bash -n hosts/linux/install-linux.sh

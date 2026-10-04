@@ -11,7 +11,7 @@ To compile this application, you must be running macOS. No Xcode installation is
 To build the `NIGHTDRIVE.app` bundle on your Mac:
 
 1. Open Terminal.
-2. Navigate to this directory (`cd path/to/hosts/macos`).
+2. Navigate to this directory (`cd NIGHTDRIVE/hosts/macos`).
 3. Run the automated Python build script:
    ```bash
    python3 build_macos.py
@@ -21,5 +21,5 @@ To build the `NIGHTDRIVE.app` bundle on your Mac:
 ## Features & Implementation
 *   **Desktop Injection:** Implemented natively using `NSWindow.Level`.
 *   **Multi-Monitor Support:** The Swift host iterates through `NSScreen.screens` and spawns a borderless window on every connected display.
-*   **Sandboxing & System Controls:** Because of macOS security sandboxing, the JavaScript engine's native Wi-Fi and Volume triggers (which work on Windows) will not directly open macOS Control Center. They remain functional visual indicators.
+*   **System Controls:** The Wi-Fi, Bluetooth, Volume and Focus buttons open the matching System Settings pane.
 *   **Invisible App:** The `Info.plist` is configured with `LSUIElement` set to `true`, hiding NIGHTDRIVE from the Dock so it behaves truly as a background wallpaper service rather than an active window.

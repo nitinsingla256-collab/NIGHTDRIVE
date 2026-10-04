@@ -9,7 +9,7 @@ import json
 import psutil
 from PyQt5.QtCore import QUrl, QTimer, Qt
 from PyQt5.QtWidgets import QApplication, QMainWindow
-from PyQt5.QtWebEngineWidgets import QWebEngineView
+from PyQt5.QtWebEngineWidgets import QWebEngineView, QWebEngineSettings
 
 class NightdriveWallpaper(QMainWindow):
     def __init__(self, url):
@@ -27,6 +27,16 @@ class NightdriveWallpaper(QMainWindow):
         self.setCentralWidget(self.view)
         
         self.view.setContextMenuPolicy(Qt.ContextMenuPolicy.NoContextMenu)
+
+        # The engine is loaded from file:// — allow it to read its own assets
+        # and reach the weather / location APIs.
+        settings = self.view.settings()
+        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessFileUrls, True)
+        settings.setAttribute(QWebEngineSettings.LocalContentCanAccessRemoteUrls, True)
+        settings.setAttribute(QWebEngineSettings.PlaybackRequiresUserGesture, False)
+
+        # Push the first battery reading as soon as the page is ready
+        self.view.loadFinished.connect(lambda ok: self.update_battery())
         
         self.view.setUrl(QUrl.fromLocalFile(url))
         
@@ -53,15 +63,16 @@ class NightdriveWallpaper(QMainWindow):
                 # Dispatch standard message event
                 js = f"window.dispatchEvent(new MessageEvent('message', {{ data: {json_str} }}));"
                 self.view.page().runJavaScript(js)
-        except Exception as e:
+        except Exception:
             pass
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     
     # Path to the shared engine index.html
+    # Repo layout: <root>/hosts/linux/nightdrive.py  ->  <root>/engine/index.html
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    engine_path = os.path.join(base_dir, 'engine', 'index.html')
+    engine_path = os.environ.get('NIGHTDRIVE_ENGINE') or os.path.join(base_dir, 'engine', 'index.html')
     
     if not os.path.exists(engine_path):
         print(f"Error: Could not find engine at {engine_path}")

@@ -1,12 +1,17 @@
 {
   "name": "nightdrive",
-  "version": "1.0.0",
-  "description": "NIGHTDRIVE Cinematic Desktop Wallpaper",
+  "version": "1.1.0",
+  "private": true,
+  "description": "NIGHTDRIVE — cinematic time-aware desktop wallpaper",
+  "type": "module",
+  "repository": "github:nitinsingla256-collab/NIGHTDRIVE",
+  "engines": { "node": ">=18" },
   "scripts": {
-    "tauri": "tauri"
-  },
-  "dependencies": {
-    "@tauri-apps/api": "^1.5.0"
+    "start": "node scripts/serve.mjs",
+    "test": "node scripts/validate.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^1.5.0"

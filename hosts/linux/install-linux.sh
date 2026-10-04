@@ -8,7 +8,7 @@ echo ""
 if command -v apt-get &> /dev/null; then
     echo "[1/3] Installing system dependencies (apt)..."
     sudo apt-get update -qq
-    sudo apt-get install -y -qq python3 python3-pip python3-pyqt5 python3-pyqt5.qtwebengine
+    sudo apt-get install -y -qq python3 python3-pip python3-pyqt5 python3-pyqt5.qtwebengine python3-psutil
 elif command -v dnf &> /dev/null; then
     echo "[1/3] Installing system dependencies (dnf)..."
     sudo dnf install -y python3 python3-pip python3-qt5 python3-qt5-webengine

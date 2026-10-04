@@ -26,6 +26,6 @@ The base `scene.jpg` should have the lamps off, and the `.png` should contain th
 - `dusk/headlights.png` (or `.jpg` overlay based on your css logic)
 - `night/headlights.png` 
 
-*(Note: The current JavaScript engine uses `headlights.jpg` with a CSS screen/lighten blend mode. You may adjust the extension in `script.js` if you prefer transparent PNGs).*
+*(Note: the engine currently loads `headlights.svg` for each night period (see `ASSETS` in `engine/script.js`). Edit that table to use PNG/JPG overlays instead.)*
 
 The JavaScript will automatically load these files. Do not use official Dodge marks unless you have rights to them.
