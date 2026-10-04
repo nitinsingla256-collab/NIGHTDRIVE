@@ -21,6 +21,7 @@ system controls.
 - **Desktop atmospheres**: Windows, macOS and Linux styling. The default follows your OS and your choice is remembered.
 - **Works on all screen sizes**: desktop, laptop, 4K, tablet and phone (portrait and landscape). Handles notches and safe areas.
 - **Accessible**: keyboard navigable, visible focus, labelled controls, Esc closes dialogs. Respects *Reduce Motion* and Windows High Contrast.
+- **Works offline**: a service worker ([`engine/sw.js`](engine/sw.js)) pre-caches the page, styles and every scene, so the wallpaper keeps running with no network. Online it refreshes the cache in the background.
 - **No build step**: plain HTML/CSS/JS in [`engine/`](engine/).
 
 ## Quick start (any device, in a browser)
@@ -63,6 +64,7 @@ NIGHTDRIVE/
 │   ├── script.js           # time engine, HUD, weather, battery, controls
 │   ├── styles.css          # layout, responsive & accessibility rules
 │   ├── themes.css          # Windows / macOS / Linux atmospheres
+│   ├── sw.js               # service worker — offline cache of the engine
 │   └── assets/             # per-period scenes + headlight overlays (see assets/README.md)
 ├── hosts/
 │   ├── linux/              # PyQt5 X11 desktop host + installer
@@ -78,6 +80,7 @@ NIGHTDRIVE/
 - **Times and transitions**: edit `PERIODS` at the top of [`engine/script.js`](engine/script.js).
 - **Images**: replace files in `engine/assets/<period>/`. See [`engine/assets/README.md`](engine/assets/README.md).
 - **Startup sound**: drop an audio file into `engine/` and set `src` on the `<audio id="engine-audio">` tag.
+- **Offline cache**: when you change any engine file, bump `CACHE_NAME` in [`engine/sw.js`](engine/sw.js) (e.g. `nightdrive-v1.3.2`) so clients pick up the new version.
 
 ## Development
 
@@ -87,3 +90,7 @@ npm start    # local preview
 ```
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
+## License
+
+[MIT](LICENSE) © 2026 Nitin Singla
