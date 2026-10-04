@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0] - 2026-10-04
+
+### Added
+- Windows host source (`hosts/windows/NightdriveHost/`): .NET 8 WPF + WebView2 wallpaper window, tray icon, and battery / Wi-Fi / Bluetooth / volume bridges.
+- `engine/engine-start.wav` plus an ignition sound wired into the startup sequence (falls back to the first click when a browser blocks autoplay).
+- `engine/assets/moon.jpg` restored from the cross-platform source bundle — still unreferenced, kept as a source asset.
+- `.github/`: release workflow (source bundle + signed-out Windows host published to Releases on `v*` tags), issue templates (bug / feature) and a pull-request template.
+- CI now compiles the Windows host on `windows-latest` and checks the host XML files.
+
+### Changed
+- `.gitignore` covers Windows host build output (`bin/`, `obj/`, `*.user`, `.vs/`); `.gitattributes` marks native binaries; `.editorconfig` gained C# / XAML / csproj rules.
+- `npm test` additionally validates the Windows host project and the ignition asset.
+
 ## [1.1.0] - 2026-10-04
 
 ### Fixed

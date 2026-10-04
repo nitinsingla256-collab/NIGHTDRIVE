@@ -48,5 +48,28 @@ check(tauri.tauri.windows.some(w => w.label === 'main'), 'tauri window labelled 
 check(existsSync(join(root, 'src-tauri/build.rs')), 'src-tauri/build.rs present');
 JSON.parse(readFileSync(join(engine, 'assets/manifest.json'), 'utf8')); ok('assets/manifest.json is valid JSON');
 
+console.log('Windows host (.NET / WebView2)');
+const win = join(root, 'hosts/windows/NightdriveHost');
+const csprojPath = join(win, 'NightdriveHost.csproj');
+check(existsSync(csprojPath), 'NightdriveHost.csproj present');
+if (existsSync(csprojPath)) {
+  const csproj = readFileSync(csprojPath, 'utf8');
+  check(/net8\.0-windows/.test(csproj), 'targets net8.0-windows');
+  check(/Microsoft\.Web\.WebView2/.test(csproj), 'references Microsoft.Web.WebView2');
+  for (const f of ['App.xaml', 'App.xaml.cs', 'MainWindow.xaml', 'MainWindow.xaml.cs',
+                   'BatteryHelper.cs', 'ConnectivityHelper.cs', 'TrayIconHelper.cs',
+                   'WallpaperHelper.cs', 'app.manifest']) {
+    check(existsSync(join(win, f)), f);
+  }
+  const mw = readFileSync(join(win, 'MainWindow.xaml.cs'), 'utf8');
+  check(/engine/.test(mw) && /index\.html/.test(mw), 'host loads engine/index.html');
+}
+
+console.log('Assets');
+check(existsSync(join(engine, 'engine-start.wav')), 'engine/engine-start.wav (ignition sound)');
+const ignore = readFileSync(join(root, '.gitignore'), 'utf8');
+check(/hosts\/windows\/\*\*\/bin\//.test(ignore) && /hosts\/windows\/\*\*\/obj\//.test(ignore),
+      '.gitignore covers Windows host build output');
+
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

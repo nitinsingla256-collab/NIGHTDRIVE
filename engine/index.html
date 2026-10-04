@@ -160,8 +160,8 @@
   </div>
 
   <!-- ══ AUDIO & STARTUP ══ -->
-  <!-- Optional ignition sound: put an audio file in engine/ and add a src attribute here -->
-  <audio id="engine-audio" preload="auto"></audio>
+  <!-- Ignition sound. Plays with the cinematic startup; browsers that block autoplay defer it to the first click. -->
+  <audio id="engine-audio" preload="auto" src="engine-start.wav"></audio>
 
   <script src="script.js?v=5"></script>
 </body>

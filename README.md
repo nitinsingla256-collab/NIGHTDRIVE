@@ -38,6 +38,7 @@ Open it fullscreen (F11) for the full wallpaper experience.
 
 | Platform | Host | How |
 |---|---|---|
+| **Windows 10/11** | Native WebView2 host ([`hosts/windows/`](hosts/windows/)) | Download `NIGHTDRIVE-Windows-Host.zip` from [Releases](../../releases), or build it with `dotnet publish hosts/windows/NightdriveHost/NightdriveHost.csproj -c Release -r win-x64` (needs the [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)) |
 | **Windows 10/11** | [Lively Wallpaper](https://www.rocksdanister.com/lively/) | *Add Wallpaper* → choose `engine/index.html` |
 | **Windows / macOS / Linux** | Tauri app ([`src-tauri/`](src-tauri/)) | `npm install && npm run tauri:build` (needs [Rust + Tauri prerequisites](https://tauri.app/v1/guides/getting-started/prerequisites)) |
 | **macOS** | Native Swift host ([`hosts/macos/`](hosts/macos/)) | `python3 hosts/macos/build_macos.py` → `open hosts/macos/NIGHTDRIVE.app` (renders behind desktop icons on all monitors) |
@@ -45,7 +46,7 @@ Open it fullscreen (F11) for the full wallpaper experience.
 
 ### What each feature needs
 
-| Feature | Browser / Lively | Windows NightdriveHost (release zip) | macOS host | Linux host |
+| Feature | Browser / Lively | Windows host | macOS host | Linux host |
 |---|---|---|---|---|
 | Scenes, clock, themes | ✅ | ✅ | ✅ | ✅ |
 | Weather | ✅ (location permission or IP fallback) | ✅ | ✅ | ✅ |
@@ -63,8 +64,10 @@ NIGHTDRIVE/
 │   ├── script.js           # time engine, HUD, weather, battery, controls
 │   ├── styles.css          # layout, responsive & accessibility rules
 │   ├── themes.css          # Windows / macOS / Linux atmospheres
+│   ├── engine-start.wav    # ignition sound played with the startup sequence
 │   └── assets/             # per-period scenes + headlight overlays (see assets/README.md)
 ├── hosts/
+│   ├── windows/            # .NET 8 WPF + WebView2 host (desktop layer, tray, battery, Wi-Fi/BT)
 │   ├── linux/              # PyQt5 X11 desktop host + installer
 │   └── macos/              # Swift/WKWebView desktop-level host + build script
 ├── src-tauri/              # Cross-platform Tauri v1 host

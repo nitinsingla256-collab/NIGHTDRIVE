@@ -1,0 +1,74 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  source-bundle:
+    name: Source bundle
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Validate before packaging
+        run: npm test
+      - name: Package cross-platform source
+        run: |
+          set -euo pipefail
+          rm -f NIGHTDRIVE-CrossPlatform-Source.zip
+          zip -r NIGHTDRIVE-CrossPlatform-Source.zip \
+            engine hosts scripts src-tauri \
+            package.json README.md CHANGELOG.md .editorconfig .gitattributes \
+            -x "*/bin/*" "*/obj/*" "src-tauri/target/*" "hosts/macos/NIGHTDRIVE.app/*" \
+               "*/__pycache__/*" "*.zip"
+          unzip -l NIGHTDRIVE-CrossPlatform-Source.zip | tail -3
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NIGHTDRIVE-CrossPlatform-Source
+          path: NIGHTDRIVE-CrossPlatform-Source.zip
+
+  windows-host:
+    name: Windows host (x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Publish NightdriveHost
+        working-directory: hosts/windows/NightdriveHost
+        run: dotnet publish NightdriveHost.csproj -c Release -r win-x64 --self-contained false
+      - name: Package Windows host
+        shell: pwsh
+        working-directory: hosts/windows/NightdriveHost
+        run: |
+          $out = "bin/Release/net8.0-windows10.0.19041.0/win-x64/publish"
+          if (-not (Test-Path $out)) { throw "publish output not found at $out" }
+          Compress-Archive -Path "$out/*" -DestinationPath "$env:GITHUB_WORKSPACE/NIGHTDRIVE-Windows-Host.zip" -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: NIGHTDRIVE-Windows-Host
+          path: NIGHTDRIVE-Windows-Host.zip
+
+  publish:
+    name: Publish release assets
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [source-bundle, windows-host]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: assets
+          merge-multiple: true
+      - name: Attach bundles to the release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: assets/*
+          generate_release_notes: true
