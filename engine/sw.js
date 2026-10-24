@@ -8,7 +8,7 @@
 
 'use strict';
 
-const CACHE_NAME = 'nightdrive-v1.3.1';
+const CACHE_NAME = 'nightdrive-v1.4.0';
 
 // Paths are relative to this worker, so the app also works when it is
 // hosted from a sub-directory. Every file listed here is validated by

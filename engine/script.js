@@ -20,15 +20,21 @@
  *  - Manual mode bypasses the rAF loop and uses a plain CSS crossfade.
  */
 
+/**
+ * Startup tracing for the native hosts. PLATFORM is declared further down
+ * with `const`, so this function must only ever be *called* after that
+ * declaration has been evaluated (TDZ — calling it earlier used to throw a
+ * fatal ReferenceError and stop the whole engine from booting).
+ */
 function logToHost(step) {
   const msg = JSON.stringify({ action: 'log_time:' + step });
+  if (typeof PLATFORM === 'undefined') return;
   if (PLATFORM.webview2) {
     window.chrome.webview.postMessage(msg);
   } else if (window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nightdrive) {
     window.webkit.messageHandlers.nightdrive.postMessage(msg);
   }
 }
-logToHost("5. HTML engine loading (script.js executing)");
 
 window.addEventListener('error', function (e) {
   console.error('[NIGHTDRIVE]', e.message, e.filename + ':' + e.lineno);
@@ -58,6 +64,9 @@ const PLATFORM = (function () {
     touch: ('ontouchstart' in window) || navigator.maxTouchPoints > 0
   };
 })();
+
+// Safe to trace now that PLATFORM exists.
+logToHost("5. HTML engine loading (script.js executing)");
 document.documentElement.classList.toggle('is-touch', PLATFORM.touch);
 
 const REDUCED_MOTION = window.matchMedia
@@ -133,7 +142,7 @@ const PERIODS = [
     hlFade: false,         // headlights fade in this period?  No.
     accent: '#a8c4d0',
     accentDim: '#4a7080',
-    ctColor: 'rgba(180,210,240,0.0)',  // colour-temperature tint (multiply)
+    ctColor: 'rgba(150,190,235,0.00)',  // colour-temperature tint (soft-light)
   },
   {
     id: 'day',
@@ -145,7 +154,7 @@ const PERIODS = [
     hlFade: false,
     accent: '#b8cce0',
     accentDim: '#4a6880',
-    ctColor: 'rgba(255,252,240,0.0)',
+    ctColor: 'rgba(255,252,244,0.00)',
   },
   {
     id: 'goldenHour',
@@ -157,7 +166,7 @@ const PERIODS = [
     hlFade: false,
     accent: '#e8a040',
     accentDim: '#8a5018',
-    ctColor: 'rgba(255,160,60,0.08)',   // warm amber tint
+    ctColor: 'rgba(214,160,92,0.09)',   // warm amber tint (the plate is already warm)
   },
   {
     id: 'dusk',
@@ -169,7 +178,7 @@ const PERIODS = [
     hlFade: true,          // headlights fade IN during this period
     accent: '#b87890',
     accentDim: '#703050',
-    ctColor: 'rgba(100,60,120,0.10)',   // cool violet tint
+    ctColor: 'rgba(118,92,146,0.14)',   // cool violet tint
   },
   {
     id: 'night',
@@ -181,7 +190,7 @@ const PERIODS = [
     hlFade: false,
     accent: '#c49a4a',
     accentDim: '#7a5f28',
-    ctColor: 'rgba(30,50,100,0.12)',    // cool blue-night tint
+    ctColor: 'rgba(74,104,158,0.16)',   // cool blue-night tint
   },
   {
     id: 'midnight',
@@ -193,34 +202,34 @@ const PERIODS = [
     hlFade: false,
     accent: '#708090',
     accentDim: '#405060',
-    ctColor: 'rgba(10,20,40,0.15)',     // deeper blue/black tint
+    ctColor: 'rgba(44,62,104,0.18)',    // deeper blue-night tint
   }
 ];
 
 const ASSETS = {
   morning: {
     scene: ['assets/morning/scene.jpg', 'assets/morning/scene.png', 'assets/morning/scene.svg'],
-    headlights: ['assets/morning/headlights.svg']
+    headlights: ['assets/morning/headlights.jpg', 'assets/morning/headlights.svg']
   },
   day: {
     scene: ['assets/day/scene.jpg', 'assets/day/scene.png', 'assets/day/scene.svg'],
-    headlights: ['assets/day/headlights.svg']
+    headlights: ['assets/day/headlights.jpg', 'assets/day/headlights.svg']
   },
   goldenHour: {
     scene: ['assets/golden-hour/scene.jpg', 'assets/golden-hour/scene.png', 'assets/golden-hour/scene.svg'],
-    headlights: ['assets/golden-hour/headlights.svg']
+    headlights: ['assets/golden-hour/headlights.jpg', 'assets/golden-hour/headlights.svg']
   },
   dusk: {
     scene: ['assets/dusk/scene.jpg', 'assets/dusk/scene.png', 'assets/dusk/scene.svg'],
-    headlights: ['assets/dusk/headlights.svg']
+    headlights: ['assets/dusk/headlights.jpg', 'assets/dusk/headlights.svg']
   },
   night: {
     scene: ['assets/night/scene.jpg', 'assets/night/scene.png', 'assets/night/scene.svg'],
-    headlights: ['assets/night/headlights.svg']
+    headlights: ['assets/night/headlights.jpg', 'assets/night/headlights.svg']
   },
   midnight: {
     scene: ['assets/midnight/scene.jpg', 'assets/midnight/scene.png', 'assets/midnight/scene.svg'],
-    headlights: ['assets/midnight/headlights.svg']
+    headlights: ['assets/midnight/headlights.jpg', 'assets/midnight/headlights.svg']
   }
 };
 
@@ -245,6 +254,9 @@ let blendRatio = 1.0;       // 1.0 = layerA fully visible, layerB hidden
 let rafHandle = null;
 let assetsCache = {};        // { periodId: { scene, headlights } }
 let assetsReady = {};        // { periodId: true } once loaded
+
+let layersOpacity = [-1, -1];
+let particleIntensity = 0;
 
 let clockTimer = null;
 let sceneTimer = null;
@@ -667,25 +679,54 @@ function fillLayer(layer, period, sceneAsset, headlightAsset) {
    COLOUR-TEMPERATURE OVERLAY
    ══════════════════════════════════════════════ */
 
-function lerpCTColor(colorA, colorB, t) {
-  // Both are rgba(r,g,b,a) strings. We just crossfade opacity; the colours
-  // are designed so that blending them by changing opacity is sufficient.
-  // We use a single overlay with the "to" colour and set its opacity to t.
-  return colorB;
+/**
+ * Colour grading overlay.
+ *
+ * Historically this was a `multiply` layer ramped to 85 % opacity, and its
+ * `rgba()` colours carried their own alpha. Multiply is a darkening blend, so
+ * the two alphas compounded: midnight ended up at 5.7/255 mean luminance with
+ * only five distinct tones left in the sky — the smooth night gradient was
+ * posterised into visible bands before it reached the screen.
+ *
+ * Now the overlay is a gentle `soft-light` tint (see styles.css) that shifts
+ * the hue of each period without crushing its luminance range, and the two
+ * neighbouring tint colours are interpolated so a crossfade never steps.
+ */
+
+/** Parse 'rgba(r,g,b,a)' / 'rgb(r,g,b)' into [r,g,b,a]. */
+function parseRGBA(str) {
+  const m = String(str || '').match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/i);
+  if (!m) return [0, 0, 0, 0];
+  return [Number(m[1]), Number(m[2]), Number(m[3]), m[4] === undefined ? 1 : Number(m[4])];
 }
+
+function lerpCTColor(colorA, colorB, t) {
+  const a = parseRGBA(colorA);
+  const b = parseRGBA(colorB);
+  const mix = (i) => a[i] + (b[i] - a[i]) * t;
+  const r = Math.round(mix(0));
+  const g = Math.round(mix(1));
+  const bl = Math.round(mix(2));
+  const al = Math.round(mix(3) * 1000) / 1000;
+  return 'rgba(' + r + ',' + g + ',' + bl + ',' + al + ')';
+}
+
+let lastCT = '';
 
 function applyCTOverlay(blendState) {
   const fromP = periodById(blendState.from);
   const toP = periodById(blendState.to);
-  if (!fromP || !toP) return;
+  if (!fromP || !toP || !ctOverlay) return;
 
-  const t = blendState.ratio;
+  // 1 = fully in `to`, 0 = fully in `from`.
+  const t = blendState.from === blendState.to ? 1 : blendState.ratio;
+  const colour = lerpCTColor(fromP.ctColor || 'rgba(0,0,0,0)', toP.ctColor || 'rgba(0,0,0,0)', t);
 
-  // Use the "to" period colour; set opacity to fade it in
-  // (If fully in one period, t=1 and we show that period's colour.)
-  const ctColor = t >= 1 ? (toP.ctColor || 'transparent') : (toP.ctColor || 'transparent');
-  ctOverlay.style.background = ctColor;
-  ctOverlay.style.opacity = String(t * 0.85); // max 85% so it's subtle
+  // Only touch the DOM when the value actually changed (this runs at 60 fps).
+  if (colour !== lastCT) {
+    lastCT = colour;
+    ctOverlay.style.background = colour;
+  }
 }
 
 /* ══════════════════════════════════════════════
@@ -701,17 +742,31 @@ function applyAccent(period) {
    HEADLIGHT FADE
    ══════════════════════════════════════════════ */
 
+/** Peak overlay opacity — restrained, so beams add light instead of haze. */
+const HEADLIGHT_OPACITY = 0.55;
+
 /**
  * Set the opacity of all headlight overlay images/SVGs in a layer.
- * During the dusk blend window we fade from 0 → 0.72.
- * In full night the opacity is 0.72 (the Phase-2 default).
+ * During the dusk blend window the layer itself fades in, carrying the beams
+ * with it; in full night they sit at HEADLIGHT_OPACITY.
  */
 function setHeadlightOpacity(layer, opacity) {
   const svgLights = layer.querySelector('.svg-headlights');
   const headImg = layer.querySelector('.headlight-img');
   const op = Math.max(0, Math.min(1, opacity));
-  if (svgLights && !svgLights.classList.contains('headlight-flare')) svgLights.style.opacity = String(op);
-  if (headImg && !headImg.classList.contains('headlight-flare')) headImg.style.opacity = String(op);
+  const value = op.toFixed(3);
+
+  // rAF calls this every frame; skip the style write when nothing changed.
+  if (svgLights && !svgLights.classList.contains('headlight-flare') &&
+      svgLights.dataset.opacity !== value) {
+    svgLights.dataset.opacity = value;
+    svgLights.style.opacity = value;
+  }
+  if (headImg && !headImg.classList.contains('headlight-flare') &&
+      headImg.dataset.opacity !== value) {
+    headImg.dataset.opacity = value;
+    headImg.style.opacity = value;
+  }
 }
 
 /**
@@ -722,13 +777,10 @@ function setHeadlightOpacity(layer, opacity) {
  */
 function headlightOpacityFor(periodId, blendState) {
   const p = periodById(periodId);
-  if (!p) return 0;
-  if (!p.headlights) return 0;
-
-  // The layer itself fades in/out via layer.style.opacity.
-  // We simply return the target opacity (0.72) and let the layer transition and 
-  // the volumetric blend math handle the interpolation linearly.
-  return 0.72;
+  if (!p || !p.headlights) return 0;
+  // The layer's own opacity already fades the whole plate in and out, so the
+  // overlay just holds its target level; the two crossfade together.
+  return HEADLIGHT_OPACITY;
 }
 
 /* ══════════════════════════════════════════════
@@ -749,57 +801,43 @@ async function ensureLayerPopulated(layer, periodId) {
   fillLayer(layer, period, cached.scene, cached.headlights);
 }
 
+let lastAccentId = null;
+let lastHeadlightMix = -1;
+
 function rafTick() {
   if (mode !== 'auto') {
     rafHandle = null;
     return;
   }
 
-  const m = minutesNow();
-  const blend = computeBlend(m);
-
-  // Determine which layers need which scenes
+  const blend = computeBlend(minutesNow());
   const needFrom = blend.from;
   const needTo = blend.to;
 
-  // Toggle Moon Visibility
-  const stage = document.getElementById('stage');
-  if (stage) {
-    if (needTo === 'night' || needTo === 'midnight') {
-      stage.classList.add('is-night');
-    } else {
-      stage.classList.remove('is-night');
-    }
-  }
-
-  // If both are the same (no blend), just show fully
+  // If both are the same (no blend), just show it fully.
   if (needFrom === needTo) {
     if (layerAId !== needTo) {
       layerAId = needTo;
       ensureLayerPopulated(layerA, needTo);
     }
-    layerA.style.opacity = '1';
-    layerB.style.opacity = '0';
+    if (layersOpacity[0] !== 1) {
+      layerA.style.opacity = '1';
+      layerB.style.opacity = '0';
+      layersOpacity[0] = 1;
+      layersOpacity[1] = 0;
+    }
 
-    // Headlights
     const period = periodById(needTo);
-    const hlOp = period && period.headlights ? 0.72 : 0;
+    const hlOp = period && period.headlights ? HEADLIGHT_OPACITY : 0;
     setHeadlightOpacity(layerA, hlOp);
     setHeadlightOpacity(layerB, 0);
-
-    const globalHlOp = hlOp / 0.72;
-    // document.getElementById('volumetric-lights').style.opacity = String(globalHlOp); // Removed because SVG handles it
-    if (typeof drawParticles === 'function') drawParticles(globalHlOp);
+    setHeadlightMix(hlOp / HEADLIGHT_OPACITY);
 
     applyCTOverlay(blend);
     applyAccentFromBlend(blend);
-    updateBlendInfo(blend);
-
   } else {
-    // Two different periods — blend
     const ratio = blend.ratio;  // 0 = fully "from", 1 = fully "to"
 
-    // Populate layers if needed
     if (layerAId !== needFrom) {
       layerAId = needFrom;
       ensureLayerPopulated(layerA, needFrom);
@@ -809,53 +847,48 @@ function rafTick() {
       ensureLayerPopulated(layerB, needTo);
     }
 
-    layerA.style.opacity = String(1 - ratio);  // from fades out
-    layerB.style.opacity = String(ratio);       // to fades in
+    // Only write opacity when it moves by a visible amount: at 60 fps the old
+    // code wrote both layers plus the tint every frame for no visual gain,
+    // which kept the compositor busy for the entire 20-minute fade.
+    const aOpacity = 1 - ratio;
+    if (Math.abs(layersOpacity[0] - aOpacity) > 0.0015) {
+      layerA.style.opacity = String(aOpacity);
+      layerB.style.opacity = String(ratio);
+      layersOpacity[0] = aOpacity;
+      layersOpacity[1] = ratio;
+    }
 
-    // Headlights for each layer
     const hlOpA = headlightOpacityFor(needFrom, blend);
     const hlOpB = headlightOpacityFor(needTo, blend);
     setHeadlightOpacity(layerA, hlOpA);
     setHeadlightOpacity(layerB, hlOpB);
-
-    const globalHlOp = (hlOpA * (1 - ratio) + hlOpB * ratio) / 0.72;
-    // document.getElementById('volumetric-lights').style.opacity = String(globalHlOp);
-    if (typeof drawParticles === 'function') drawParticles(globalHlOp);
+    setHeadlightMix((hlOpA * (1 - ratio) + hlOpB * ratio) / HEADLIGHT_OPACITY);
 
     applyCTOverlay(blend);
     applyAccentFromBlend(blend);
-    updateBlendInfo(blend);
 
-    // Update current/scene name for dev panel
+    // Track the dominant scene label for anything reading `currentId`.
     const domPeriod = ratio >= 0.5 ? periodById(needTo) : periodById(needFrom);
-    if (domPeriod) {
-      currentId = domPeriod.id;
-      const sceneNameEl = document.getElementById('scene-name');
-      if (sceneNameEl) sceneNameEl.textContent = domPeriod.label;
-    }
+    if (domPeriod) currentId = domPeriod.id;
   }
 
-  // Sync dev-panel clock (always)
-  const clockEl = document.getElementById('clock');
-  if (clockEl) clockEl.textContent = formatTime(new Date());
-
   rafHandle = requestAnimationFrame(rafTick);
+}
+
+/** Feed the dust field the current headlight strength (used to gate it). */
+function setHeadlightMix(mix) {
+  const value = Math.max(0, Math.min(1, mix));
+  if (Math.abs(value - lastHeadlightMix) < 0.002) return;
+  lastHeadlightMix = value;
+  particleIntensity = value;
 }
 
 function applyAccentFromBlend(blend) {
   // Use the dominant (to) period for accent colour
   const p = periodById(blend.to) || periodById(blend.from);
-  if (p) applyAccent(p);
-}
-
-function updateBlendInfo(blend) {
-  const blendInfoEl = document.getElementById('blend-info');
-  if (!blendInfoEl) return;
-  if (blend.from === blend.to) {
-    blendInfoEl.textContent = blend.to + ' 100%';
-  } else {
-    blendInfoEl.textContent =
-      blend.from + ' → ' + blend.to + ' (' + Math.round(blend.ratio * 100) + '%)';
+  if (p && p.id !== lastAccentId) {
+    lastAccentId = p.id;
+    applyAccent(p);
   }
 }
 
@@ -910,9 +943,8 @@ async function showPeriodManual(period, instant) {
   const back = frontIsA ? layerB : layerA;
 
   fillLayer(back, period, cached.scene, cached.headlights);
-  const hlOp = period.headlights ? 0.72 : 0;
+  const hlOp = period.headlights ? HEADLIGHT_OPACITY : 0;
   setHeadlightOpacity(back, hlOp);
-  // document.getElementById('volumetric-lights').style.opacity = String(hlOp / 0.72);
 
   applyAccent(period);
 
@@ -1011,6 +1043,7 @@ Promise.all([
   initBattery();
   initWeather();
   initParticles();
+  startParticles();
   logToHost("8. Optional features becoming ready");
   
   // Start transitions and cinematic audio glitch
@@ -1025,76 +1058,114 @@ const particlesCanvas = document.getElementById('particles-canvas');
 const ctx = particlesCanvas ? particlesCanvas.getContext('2d') : null;
 let particles = [];
 let pW = 0, pH = 0;
+let pDpr = 1;
+let particlesRunning = false;
+
+/**
+ * Dust motes in the headlight cones.
+ *
+ * The previous implementation was both too strong and too coarse: 70 motes
+ * up to 2.2 px drawn on a canvas sized in CSS pixels (so they were re-scaled
+ * and smeared on any HiDPI display), drifting across the whole lower half of
+ * the frame regardless of where the light actually fell. Here the field is
+ * smaller, dimmer, drawn at device resolution, and confined to the beam wedges.
+ */
+const PARTICLE_COUNT = 26;
+
+function sizeParticlesCanvas() {
+  if (!particlesCanvas) return;
+  pDpr = Math.min(window.devicePixelRatio || 1, 2);
+  pW = window.innerWidth;
+  pH = window.innerHeight;
+  particlesCanvas.width = Math.round(pW * pDpr);
+  particlesCanvas.height = Math.round(pH * pDpr);
+  particlesCanvas.style.width = pW + 'px';
+  particlesCanvas.style.height = pH + 'px';
+  if (ctx && typeof ctx.setTransform === 'function') ctx.setTransform(pDpr, 0, 0, pDpr, 0, 0);
+}
 
 function initParticles() {
   if (!particlesCanvas || !ctx) return;
-  pW = particlesCanvas.width = window.innerWidth;
-  pH = particlesCanvas.height = window.innerHeight;
-  window.addEventListener('resize', () => {
-    pW = particlesCanvas.width = window.innerWidth;
-    pH = particlesCanvas.height = window.innerHeight;
-  });
+  sizeParticlesCanvas();
+  window.addEventListener('resize', sizeParticlesCanvas);
 
-  // Spawn initial dust
-  for (let i = 0; i < 70; i++) {
-    particles.push(spawnParticle(true));
+  particles = [];
+  for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(spawnParticle(true));
+
+  // Respect a mid-session "reduce motion" change.
+  if (REDUCED_MOTION.addEventListener) {
+    REDUCED_MOTION.addEventListener('change', function () {
+      if (REDUCED_MOTION.matches && particlesCanvas) particlesCanvas.style.opacity = '0';
+    });
   }
 }
 
 function spawnParticle(randomY = false) {
-  // Spawn in the illuminated region in front of the car
-  // Since beams go down-left, focus roughly between 10% and 65% of screen width
-  const x = pW * (0.10 + Math.random() * 0.55);
+  // Two wedges cast by the lamps, which sit low and right of centre.
+  const wedge = Math.random() < 0.5 ? -1 : 1;
+  const spread = Math.pow(Math.random(), 0.7);
+  const yTop = pH * 0.72;
+  const yBottom = pH * 1.02;
+  const y = randomY ? yTop + Math.random() * (yBottom - yTop) : yBottom;
+  const xCentre = pW * (wedge < 0 ? 0.42 : 0.56) + (y - yTop) * (wedge < 0 ? -0.30 : 0.16);
+  const x = xCentre + (Math.random() - 0.5) * pW * 0.16 * (0.4 + spread);
   return {
     x: x,
-    y: randomY ? (pH * 0.78 + Math.random() * pH * 0.22) : (pH + 10),
-    vx: (Math.random() - 0.5) * 0.5, // gentle horizontal drift
-    vy: -Math.random() * 0.4 - 0.1,  // slow upward drift
-    size: Math.random() * 1.8 + 0.4,
-    life: Math.random(), // 0 to 1
-    lifeRate: Math.random() * 0.003 + 0.001
+    y: y,
+    vx: (Math.random() - 0.5) * 0.22,
+    vy: -(Math.random() * 0.16 + 0.04),
+    size: Math.random() * 0.9 + 0.35,
+    life: Math.random(),
+    lifeRate: Math.random() * 0.0022 + 0.0008
   };
 }
 
-function drawParticles(globalHlOp) {
-  if (!ctx || globalHlOp <= 0 || REDUCED_MOTION.matches) {
-    if (particlesCanvas) particlesCanvas.style.opacity = '0';
-    return;
+function drawParticlesStep() {
+  if (!ctx || !particlesCanvas) return;
+
+  const active = particleIntensity > 0.02 && !REDUCED_MOTION.matches;
+  const canvasOpacity = active ? Math.min(1, particleIntensity).toFixed(2) : '0';
+  if (canvasOpacity !== particlesCanvas.dataset.opacity) {
+    particlesCanvas.dataset.opacity = canvasOpacity;
+    particlesCanvas.style.opacity = canvasOpacity;
   }
-  particlesCanvas.style.opacity = '1';
+  if (!active) return;
 
   ctx.clearRect(0, 0, pW, pH);
-
-  // Subtle glowing dust color
-  ctx.fillStyle = `rgba(210, 225, 255, ${globalHlOp * 0.35})`;
+  ctx.fillStyle = 'rgba(226, 232, 240, 0.55)';
 
   for (let i = 0; i < particles.length; i++) {
-    let p = particles[i];
+    const p = particles[i];
     p.x += p.vx;
     p.y += p.vy;
     p.life += p.lifeRate;
 
-    // Natural non-linear drift
-    p.x += Math.sin(p.life * Math.PI * 3) * 0.3;
-
-    // Fade in/out based on life (0->1->0)
-    const fade = Math.sin(p.life * Math.PI);
-
-    if (fade > 0) {
+    const fade = Math.sin(Math.max(0, Math.min(1, p.life)) * Math.PI);
+    if (fade > 0.01) {
+      ctx.globalAlpha = fade * 0.28;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.globalAlpha = fade;
       ctx.fill();
     }
 
-    // Reset if life ended or if drifting too high (above car headlights at ~76.5%)
-    if (p.life >= 1 || p.y < pH * 0.765) {
-      particles[i] = spawnParticle(false);
-    }
+    if (p.life >= 1 || p.y < pH * 0.70) particles[i] = spawnParticle(false);
   }
+  ctx.globalAlpha = 1;
 }
 
-// initParticles is called after first frame
+function particlesLoop() {
+  if (!particlesRunning) return;
+  drawParticlesStep();
+  requestAnimationFrame(particlesLoop);
+}
+
+function startParticles() {
+  if (particlesRunning || !ctx) return;
+  particlesRunning = true;
+  requestAnimationFrame(particlesLoop);
+}
+
+// initParticles is called after first frame; startParticles() once booted.
 
 /* ══════════════════════════════════════════════
    PREVIEW STRIP (REMOVED)
@@ -1225,30 +1296,22 @@ function runCinematicStartup() {
 
   const triggerIgnitionVisuals = () => {
     if (REDUCED_MOTION.matches) return;
+    // A single, restrained flare on the lamps. The previous version also added
+    // a perpetual 80 ms `engine-idle` shake, which re-rasterised the scene
+    // every frame and left every image edge permanently soft.
     [layerA, layerB].forEach(layer => {
       const hlImg = layer.querySelector('.headlight-img');
       const svgHl = layer.querySelector('.svg-headlights');
 
       if (hlImg) {
         hlImg.style.opacity = '';
-        hlImg.classList.remove('engine-idle');
-        void hlImg.offsetWidth;
         hlImg.classList.add('headlight-flare');
-        setTimeout(() => {
-          hlImg.classList.remove('headlight-flare');
-          hlImg.classList.add('engine-idle');
-        }, 1500);
+        setTimeout(() => hlImg.classList.remove('headlight-flare'), 1200);
       }
-
       if (svgHl) {
         svgHl.style.opacity = '';
-        svgHl.classList.remove('engine-idle');
-        void svgHl.offsetWidth;
         svgHl.classList.add('headlight-flare');
-        setTimeout(() => {
-          svgHl.classList.remove('headlight-flare');
-          svgHl.classList.add('engine-idle');
-        }, 1500);
+        setTimeout(() => svgHl.classList.remove('headlight-flare'), 1200);
       }
     });
 

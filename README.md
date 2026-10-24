@@ -7,18 +7,18 @@ system controls.
 
 ![CI](https://github.com/nitinsingla256-collab/NIGHTDRIVE/actions/workflows/ci.yml/badge.svg)
 
-| Sunrise | Day | Golden Hour |
+| Morning | Day | Golden Hour |
 |---|---|---|
-| ![Sunrise](docs/screenshots/sunrise.png) | ![Day](docs/screenshots/day.png) | ![Golden Hour](docs/screenshots/golden-hour.png) |
+| ![Morning](docs/screenshots/sunrise.png) | ![Day](docs/screenshots/day.png) | ![Golden Hour](docs/screenshots/golden-hour.png) |
 | **Dusk** | **Night** | **Midnight** |
 | ![Dusk](docs/screenshots/dusk.png) | ![Night](docs/screenshots/night.png) | ![Midnight](docs/screenshots/midnight.png) |
 
 ## Features
 
 - **Real-time scene blending**: 20-minute crossfades between six periods, with headlights fading in at dusk.
+- **Photographic plates**: six 1376×768 scene renders at 4:4:4 chroma, with a volumetric beam overlay, a photographic moon composite and a restrained soft-light grade.
 - **HUD**: clock, date, live weather (Open-Meteo), battery level and charging state.
 - **Quick controls**: Wi-Fi, Bluetooth, Volume, Focus. These open the matching OS settings page on Windows and macOS.
-- **Desktop atmospheres**: Windows, macOS and Linux styling. The default follows your OS and your choice is remembered.
 - **Works on all screen sizes**: desktop, laptop, 4K, tablet and phone (portrait and landscape). Handles notches and safe areas.
 - **Accessible**: keyboard navigable, visible focus, labelled controls, Esc closes dialogs. Respects *Reduce Motion* and Windows High Contrast.
 - **Works offline**: a service worker ([`engine/sw.js`](engine/sw.js)) pre-caches the page, styles and every scene, so the wallpaper keeps running with no network. Online it refreshes the cache in the background.
@@ -72,8 +72,10 @@ NIGHTDRIVE/
 │   ├── linux/              # PyQt5 X11 desktop host + installer
 │   └── macos/              # Swift/WKWebView desktop-level host + build script
 ├── src-tauri/              # Cross-platform Tauri v1 host
-├── scripts/                # serve.mjs (dev server), validate.mjs (tests)
-├── docs/screenshots/
+├── scripts/                # serve.mjs (dev server), validate.mjs + smoke.mjs (tests),
+│                           # rebuild-assets.py / build-headlights.py / preview-render.py (asset tooling)
+├── docs/screenshots/       # README gallery (predates the 1.4.0 visual pass)
+├── docs/preview/           # compositing previews from scripts/preview-render.py
 └── .github/workflows/ci.yml
 ```
 
@@ -82,13 +84,16 @@ NIGHTDRIVE/
 - **Times and transitions**: edit `PERIODS` at the top of [`engine/script.js`](engine/script.js).
 - **Images**: replace files in `engine/assets/<period>/`. See [`engine/assets/README.md`](engine/assets/README.md).
 - **Startup sound**: drop an audio file into `engine/` and set `src` on the `<audio id="engine-audio">` tag.
-- **Offline cache**: when you change any engine file, bump `CACHE_NAME` in [`engine/sw.js`](engine/sw.js) (e.g. `nightdrive-v1.3.2`) so clients pick up the new version.
+- **Offline cache**: when you change any engine file, bump `CACHE_NAME` in [`engine/sw.js`](engine/sw.js) (e.g. `nightdrive-v1.4.1`) so clients pick up the new version.
 
 ## Development
 
 ```bash
-npm test     # validates engine files, asset paths and host configs (also runs in CI)
+npm test     # validates engine files, asset paths, host configs, scene-image
+             # quality, and actually boots the engine in a DOM stub (runs in CI)
 npm start    # local preview
+
+python3 scripts/preview-render.py   # re-render docs/preview/ from the plates
 ```
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes.

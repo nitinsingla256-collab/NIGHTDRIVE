@@ -81,12 +81,27 @@ body {
   height: 100%;
 }
 
-/* Raster images: cover + center, hidden until loaded */
+/* Raster images: cover + center, hidden until loaded.
+   `image-rendering: auto` is explicit so no engine or later rule can switch
+   the scene to nearest-neighbour / pixelated scaling, and the transform-free
+   element lets the compositor resample with a proper filter. */
 .scene-img,
 .headlight-img {
   object-fit: cover;
   object-position: center;
   display: none;
+  image-rendering: auto;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Portrait displays crop hard into a 16:9 plate — bias the crop so the car
+   stays in frame instead of centring on empty valley. */
+@media (orientation: portrait) {
+  .scene-img,
+  .headlight-img {
+    object-position: 58% 50%;
+  }
 }
 
 .svg-scene svg,
@@ -114,15 +129,20 @@ body {
   transform: translate(19.186%, 39.0625%) scale(0.49107);
 }
 
-/* Colour-temperature overlay — sits above scene layers, below HUD */
+/* Colour-temperature overlay — sits above scene layers, below HUD.
+   `soft-light` tints hue while leaving luminance detail intact; the previous
+   `multiply` darkened the night plates into 5-tone bands. The overlay's
+   opacity is fixed at 1 and the per-period colour carries its own low alpha,
+   so the tint can never compound into a crushed image. */
 .ct-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 2;
-  /* background + opacity set dynamically by JS */
-  mix-blend-mode: multiply;
-  will-change: opacity, background;
+  /* background set dynamically by JS */
+  mix-blend-mode: soft-light;
+  opacity: 1;
+  will-change: background;
 }
 
 /* ── Cinematic CSS fallbacks (no photo) ── */
@@ -244,7 +264,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #ffffff;
-  text-shadow: 0 0 40px rgba(180, 220, 255, 0.35), 0 2px 12px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 24px rgba(0, 0, 0, 0.55);
   line-height: 1;
 }
 
@@ -263,9 +283,9 @@ body {
   gap: 8px;
   color: rgba(255, 255, 255, 0.95);
   background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.20);
   border-radius: 50px;
   padding: 7px 14px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.15);
@@ -352,33 +372,26 @@ body {
   pointer-events: none;
   z-index: 3;
   opacity: 0;
-  transition: opacity 3s ease;
   mix-blend-mode: screen;
 }
 
-.particles-canvas.is-on {
-  opacity: 1;
-}
-
 /* ══════════════════════════════════════════════
-   SCANLINES (Realistic CRT overlay)
+   CINEMATIC FINISHING
+   A single, very soft vignette. No scanlines: the CRT line pattern sat on
+   top of every photograph at 60 % opacity and read as visible banding at
+   normal viewing distance, which is the opposite of photographic.
    ══════════════════════════════════════════════ */
-.scanlines {
-  position: fixed;
+.stage::after {
+  content: '';
+  position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
   pointer-events: none;
-  z-index: 40;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0),
-    rgba(255, 255, 255, 0) 50%,
-    rgba(0, 0, 0, 0.04) 50%,
-    rgba(0, 0, 0, 0.04)
+  z-index: 4;
+  background: radial-gradient(
+    ellipse 78% 72% at 50% 46%,
+    rgba(0, 0, 0, 0) 55%,
+    rgba(0, 0, 0, 0.20) 100%
   );
-  background-size: 100% 4px;
-  opacity: 0.6;
 }
 
 /* ══════════════════════════════════════════════
@@ -502,9 +515,9 @@ body {
   max-height: 52px;
   /* Each button is its own frosted glass square */
   background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.20);
   cursor: pointer;
   border-radius: 16px;
   transition: background 0.2s ease, transform 0.15s ease;
@@ -892,21 +905,15 @@ kbd {
 
 /* Ignition Headlight Flare */
 .headlight-flare {
-  animation: ignition-flare 0.4s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+  animation: ignition-flare 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
+/* Warms the lamps up instead of flashing them: opacity stays owned by JS so
+   ending the animation never snaps the beams back to a different level. */
 @keyframes ignition-flare {
-  0% {
-    opacity: 0;
-  }
-  30% {
-    opacity: 1;
-    filter: brightness(1.8) drop-shadow(0 0 20px rgba(255, 255, 255, 0.8));
-  }
-  100% {
-    opacity: 0.72;
-    filter: brightness(1) drop-shadow(0 0 0 transparent);
-  }
+  0%   { filter: brightness(0.45); }
+  30%  { filter: brightness(1.22); }
+  100% { filter: brightness(1); }
 }
 
 /* Engine Vibration (Shake) */
@@ -922,15 +929,9 @@ kbd {
   45%, 85% { transform: translate(3px, -1px) rotate(-0.2deg); }
 }
 
-/* Engine Idle Rumble (Continuous) */
-.engine-idle {
-  animation: idle-rumble 0.08s infinite alternate ease-in-out;
-}
-
-@keyframes idle-rumble {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(0.8px) translateX(0.3px); }
-}
+/* Engine idle rumble removed in the photorealism pass: a 80 ms infinite
+   translate kept the whole overlay permanently off the pixel grid, so every
+   beam edge stayed soft and the compositor re-rasterised forever. */
 
 /* UI Glitch Effect on Startup */
 .ui-glitch {
@@ -938,15 +939,10 @@ kbd {
 }
 
 @keyframes glitch {
-  0% { opacity: 0; transform: scale(1.05) skewX(20deg); filter: blur(4px) drop-shadow(5px 0 0 rgba(255,0,0,0.8)); }
-  10% { opacity: 1; transform: scale(1) skewX(0deg); filter: blur(0px); }
-  15% { transform: translate(-4px, 2px); filter: drop-shadow(-5px 0 0 rgba(0,255,255,0.8)); }
-  20% { transform: translate(4px, -2px); filter: drop-shadow(5px 0 0 rgba(255,0,255,0.8)); }
-  25% { transform: translate(0, 0); filter: drop-shadow(0 0 0 transparent); }
-  35% { opacity: 0.5; }
-  40% { opacity: 1; transform: skewX(-10deg); }
-  45% { transform: skewX(0); }
-  100% { opacity: 1; }
+  0%   { opacity: 0; transform: translateY(4px); filter: blur(3px); }
+  40%  { opacity: 0.65; filter: blur(1.2px); }
+  70%  { opacity: 0.92; filter: blur(0.3px); }
+  100% { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 /* ══════════════════════════════════════════════
@@ -1051,7 +1047,7 @@ html, body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
-  .particles-canvas, .scanlines { display: none; }
+  .particles-canvas { display: none; }
 }
 
 /* High-contrast / forced colors (Windows) */

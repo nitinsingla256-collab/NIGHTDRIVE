@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@400;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
 
@@ -40,11 +40,8 @@
 
     <!-- Volumetric Headlight Beams (SVG handles this responsively) -->
 
-    <!-- Cinematic Dust Particles -->
+    <!-- Dust motes in the headlight cones (disabled under reduced motion) -->
     <canvas id="particles-canvas" class="particles-canvas" aria-hidden="true"></canvas>
-
-    <!-- CRT Scanlines / Realistic display overlay -->
-    <div class="scanlines" aria-hidden="true"></div>
 
     <!-- Colour-temperature overlay — warms/cools the scene over time -->
     <div id="ct-overlay" class="ct-overlay" aria-hidden="true"></div>
@@ -144,7 +141,7 @@
   <!-- Ignition sound. Plays with the cinematic startup; browsers that block autoplay defer it to the first click. -->
   <audio id="engine-audio" preload="auto" src="engine-start.wav"></audio>
 
-  <script src="script.js?v=5"></script>
+  <script src="script.js?v=6"></script>
 
   <!-- ══ OFFLINE SUPPORT ══ Service worker pre-caches the engine (see sw.js).
        Ignored by file:// and other insecure contexts — the app just runs online. -->

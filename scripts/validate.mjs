@@ -4,6 +4,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { runEngineSmoke } from './smoke.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const engine = join(root, 'engine');
@@ -48,7 +49,7 @@ console.log('Service worker (offline support)');
 const sw = readFileSync(join(engine, 'sw.js'), 'utf8');
 try { new vm.Script(sw, { filename: 'sw.js' }); ok('sw.js parses'); } catch (e) { fail('sw.js syntax: ' + e.message); }
 const cacheName = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1];
-check(cacheName === 'nightdrive-v1.3.1', `cache name is ${cacheName || 'missing'}`);
+check(cacheName === 'nightdrive-v1.4.0', `cache name is ${cacheName || 'missing'}`);
 check(/serviceWorker/.test(html) && /register\(\s*['"]sw\.js['"]/.test(html), 'index.html registers the service worker');
 
 const preList = sw.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
@@ -99,11 +100,79 @@ if (existsSync(csprojPath)) {
   check(/engine/.test(mw) && /index\.html/.test(mw), 'host loads engine/index.html');
 }
 
+console.log('Scene image quality');
+// A pixelated wallpaper is a bug, so the shipped plates are checked rather
+// than trusted: they must be big enough for a 1080p+ display and must not be
+// chroma-subsampled or heavily quantised. `night` and `midnight` once shipped
+// at 0.59-0.82 bits/pixel, which is what made the night sky blocky.
+const JPEG_SOF = new Set([0xc0, 0xc1, 0xc2, 0xc3, 0xc5, 0xc6, 0xc7, 0xc9, 0xca, 0xcb, 0xcd, 0xce, 0xcf]);
+function readJpeg(path) {
+  const buf = readFileSync(path);
+  let i = 2;
+  let info = null;
+  while (i < buf.length - 1) {
+    if (buf[i] !== 0xff) { i++; continue; }
+    const marker = buf[i + 1];
+    if (marker === 0xd8 || marker === 0xd9 || (marker >= 0xd0 && marker <= 0xd7) || marker === 0x01) { i += 2; continue; }
+    const len = buf.readUInt16BE(i + 2);
+    if (JPEG_SOF.has(marker)) {
+      const seg = i + 4;
+      info = {
+        height: buf.readUInt16BE(seg + 1),
+        width: buf.readUInt16BE(seg + 3),
+        comps: [...Array(buf[seg + 5])].map((_, c) => {
+          const hv = buf[seg + 7 + c * 3];
+          return { h: hv >> 4, v: hv & 15 };
+        })
+      };
+    }
+    i += 2 + len;
+  }
+  if (!info) return null;
+  return { ...info, bytes: buf.length, bpp: (buf.length * 8) / (info.width * info.height) };
+}
+
+const scenePeriods = ['morning', 'day', 'golden-hour', 'dusk', 'night', 'midnight'];
+for (const period of scenePeriods) {
+  const rel = `assets/${period}/scene.jpg`;
+  const p = join(engine, rel);
+  if (!existsSync(p)) { fail(`${rel} missing`); continue; }
+  const j = readJpeg(p);
+  if (!j) { fail(`${rel} is not a readable JPEG`); continue; }
+  check(j.width >= 1280 && j.height >= 720,
+    `${rel} is ${j.width}x${j.height} (>= 1280x720)`);
+  const chroma = j.comps.length > 1 ? j.comps[1] : null;
+  const luma = j.comps[0];
+  check(!chroma || (chroma.h === luma.h && chroma.v === luma.v),
+    `${rel} keeps full chroma resolution (4:4:4)`);
+  check(j.bpp >= 1.0, `${rel} is ${j.bpp.toFixed(2)} bits/pixel (>= 1.0, not over-compressed)`);
+}
+
 console.log('Assets');
 check(existsSync(join(engine, 'engine-start.wav')), 'engine/engine-start.wav (ignition sound)');
 const ignore = readFileSync(join(root, '.gitignore'), 'utf8');
 check(/hosts\/windows\/\*\*\/bin\//.test(ignore) && /hosts\/windows\/\*\*\/obj\//.test(ignore),
       '.gitignore covers Windows host build output');
+
+console.log('Engine boot (executed, not just parsed)');
+// A top-level ReferenceError used to abort script.js before the first frame,
+// leaving only the CSS gradient placeholder on screen. Only executing the
+// script catches that class of bug.
+try {
+  const report = await runEngineSmoke();
+  if (report.ok) ok('script.js boots and runs animation frames');
+  else {
+    fail('boot error: ' + report.errors.map((e) => e.message).join('; '));
+    for (const e of report.errors) console.error('      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      '));
+  }
+  check(/\d{2}:\d{2} (AM|PM)/.test(report.hudText || ''), `clock renders (${report.hudText || 'empty'})`);
+  check(/\b\d{4}\b/.test(report.hudDate || ''), 'date renders');
+  check((report.sceneSrcs || []).length > 0 && report.sceneSrcs.every((s) => s.endsWith('.jpg')),
+    `scene images resolved from disk (${(report.sceneSrcs || []).join(', ') || 'none'})`);
+  check((report.framesRun || 0) > 0, 'animation loop runs');
+} catch (e) {
+  fail('smoke test crashed: ' + e.message);
+}
 
 console.log(failures ? `\n${failures} check(s) failed` : '\nAll checks passed');
 process.exit(failures ? 1 : 0);

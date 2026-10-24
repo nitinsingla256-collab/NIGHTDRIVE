@@ -1,11 +1,80 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.0] — 2026-10-24
+
+Photorealism and visual-quality pass. No framework, no architecture change.
+
+### Fixed
+- **The engine never booted.** `script.js` called `logToHost()` on line 31, but
+  `PLATFORM` is declared with `const` further down. The call threw
+  `ReferenceError: Cannot access 'PLATFORM' before initialization` before a
+  single scene line ran, so no image, clock, battery or weather code executed
+  and the wallpaper fell back to its CSS gradients. The trace call now happens
+  after `PLATFORM` exists, and `logToHost()` guards against the TDZ anyway.
+- `rafTick()` called an undefined `formatTime()` on every frame, which threw
+  once per animation frame and stopped the loop from re-scheduling itself. The
+  dead dev-panel code that used it (and `#clock`, `#scene-name`, `#blend-info`,
+  none of which exist in the DOM) is gone.
+- `ASSETS[...].headlights` pointed only at the placeholder SVG, so the 588 KB
+  photographic beam plates were downloaded, pre-cached and never displayed.
+  The overlay drawn on screen was literally two 8 px white circles, about
+  130 px left of the car's actual lamps. The `.jpg` plate is now preferred and
+  the SVG is the fallback.
+
+### Changed
+- Night and midnight plates rebuilt from the sharp dusk master. They were
+  shipped at 0.82 and 0.59 bits/pixel — roughly 5× heavier compression than
+  the other four plates — which is what made the night sky blocky and
+  posterised. Fitting a per-channel lookup table leaves ~1 luminance level of
+  residual, i.e. they are pure colour grades of the dusk frame, so the grade is
+  re-applied to the plate that still has the detail. See
+  `scripts/rebuild-assets.py`.
+- All scene plates re-encoded at 4:4:4 chroma, progressive, quality 95.
+- Blurry 40 px moon replaced with a proper composite of the 2580×2452
+  `assets/moon.jpg` plate (supersampled, feathered limb, tight halo).
+- Headlight overlay rebuilt: emitter rings dissolved, emitters dimmed so they
+  add glow instead of a second set of lamps, beam warmed toward the ~3000 K
+  lamps baked into the plates, highlight roll-off to stop flat-white clipping.
+  Overlay opacity 0.72 → 0.55.
+- Colour grading overlay switched from `multiply` at 85 % (which compounded
+  with the alpha already in each period's `rgba()` colour) to a gentle
+  `soft-light` tint. Midnight previously had 5 distinct tones left in the sky;
+  it now keeps 19, with no pixels clipped to black. Crossfades interpolate the
+  tint colour instead of stepping between them.
+- CRT scanline overlay removed — it put a 4 px light/dark pattern over every
+  photograph at 60 % opacity and read as visible banding.
+- Added a single soft corner vignette as the only overlay on the imagery.
+- Dust particles: 70 → 26, dimmer, drawn at device pixel ratio in the beam
+  wedges only, and driven by their own loop instead of the scene blend loop.
+- Removed the permanent `engine-idle` shake (80 ms infinite translate) that
+  kept the overlay off the pixel grid and forced constant re-rasterisation.
+- Ignition flare no longer blows the lamps out with `brightness(1.8)` plus a
+  20 px white drop shadow; the HUD entrance no longer uses RGB-split glitches.
+- Blend loop writes layer opacity, tint and accent only when they actually
+  change, instead of restyling the DOM every frame for 20-minute fades.
+- Explicit `image-rendering: auto` on the scene images, and a car-biased crop
+  (`object-position: 58%`) on portrait displays.
+- HUD: removed the blue neon halo on the clock, and stopped the widget pills
+  over-saturating the wallpaper behind them (`saturate(1.6)` → `1.05`).
+- Service worker cache bumped to `nightdrive-v1.4.0` so existing installs pick
+  up the new assets.
 
 ### Added
-- MIT LICENSE (© 2026 Nitin Singla).
-- Offline support: `engine/sw.js` service worker (cache `nightdrive-v1.3.1`) pre-caches the page, styles, script and every scene/headlight asset, registered from `engine/index.html`. External fonts and weather APIs stay network-only.
-- `npm test` now validates the service worker: cache name, pre-cached files exist, and the registration in `index.html`.
+- MIT LICENSE (© 2026 Nitin Singla) — previously listed under "Unreleased".
+- Offline support: `engine/sw.js` service worker pre-caches the page, styles,
+  script and every scene/headlight asset, registered from `engine/index.html`.
+  External fonts and weather APIs stay network-only — previously listed under
+  "Unreleased".
+- `npm test` validates the service worker: cache name, pre-cached files exist,
+  and the registration in `index.html`.
+- `npm test` now executes the engine in a DOM stub (`scripts/smoke.mjs`) and
+  fails on any boot-time `ReferenceError`, checks the clock/date render, that
+  scene images resolve from disk, and that the animation loop runs.
+- `npm test` now validates scene images: ≥ 1280×720, 4:4:4 chroma, and
+  ≥ 1.0 bits/pixel. The old night plates fail all three checks.
+- `scripts/rebuild-assets.py` and `scripts/build-headlights.py` make the asset
+  transformations reproducible.
+
 ## [1.3.1] - 2026-10-04
 
 ### Removed
