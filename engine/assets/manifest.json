@@ -182,10 +182,15 @@
         "midnight"
       ],
       "source": "assets/moon.jpg",
-      "note": "The lunar disc is composited from a photographic plate, replacing the ~40 px moon in the original renders. The glow around it is written into a square patch, and that patch's own edges are now faded to exactly zero: without the window the patch boundary was a ~2.5-level step across the sky gradient, visible as a faint box at 1:1. scripts/rebuild-assets.py measures the remaining seam and refuses to write a plate above 1.0 level.",
+      "mode": "screen-transmittance + windowed Mie halo (zero dark limb ring)",
+      "center": [
+        1090.0,
+        166.0
+      ],
+      "radius": 31.0,
       "measuredSeamLevels": {
-        "night": 0.41,
-        "midnight": 0.31
+        "night": 0.034,
+        "midnight": 0.019
       }
     }
   },

@@ -15,15 +15,13 @@ system controls.
 
 ## Features
 
-- **Real-time scene blending**: 20-minute crossfades between six periods, with headlights fading in at dusk.
-- **Photographic plates**: six 1376×768 scene renders at 4:4:4 chroma, with a volumetric beam overlay, a photographic moon composite and a restrained soft-light grade. Baked-in model badges are retouched out.
-- **Car and landscape are separate slots**: each period declares `landscape`, an optional `portrait` plate, an optional transparent `cursor` (car) layer and a `focus` point, so a future phase can swap car and scenery independently. Tall assets are shown whole over a blurred backdrop instead of stretched.
-- **HUD**: clock, date, live weather (Open-Meteo), battery level and charging state.
-- **Quick controls**: Wi-Fi, Bluetooth, Volume, Focus. These open the matching OS settings page on Windows and macOS.
-- **Works on all screen sizes**: desktop, laptop, 4K, tablet and phone (portrait and landscape). Handles notches and safe areas. The crop follows the car, not the centre of the frame.
-- **Accessible**: keyboard navigable, visible focus, labelled controls, Esc closes dialogs. Respects *Reduce Motion* and Windows High Contrast.
-- **Works offline**: a service worker ([`engine/sw.js`](engine/sw.js)) pre-caches the page, styles and every scene, so the wallpaper keeps running with no network. Online it refreshes the cache in the background.
-- **No build step**: plain HTML/CSS/JS in [`engine/`](engine/).
+- **Reference-grade Wallpaper Stage & Unclipped Sky Clock**: six 1376×768 4:4:4 Cascade Overlook plates plus six 1376×768 Scenic Touring plates, 1:1 coordinate-locked headlight beams, feathered upper-right lunar composite, and a tall condensed translucent sky clock (`Oswald`) automatically clamped above every scene's measured ridge so silhouettes never cut clock digits.
+- **Control Center Left Quick Settings Drawer**: zero-obstruction closed desktop (`6 px` invisible left hover trigger + `Ctrl/Cmd+B` + `Ctrl+Alt+N` on Windows), frosted translucent panel with Wi-Fi/Network & Bluetooth controls, audio slider + mute, Music card + scrubbing bar, Scene & Schedule card, Battery/Weather/Date/Time telemetry, Wallpaper Studio & Car Studio shortcuts, Display Settings, Restore Defaults, and Exit.
+- **Editable Automatic Time Schedule**: dedicated 6-period local-time scheduler (`morning`, `day`, `goldenHour`, `dusk`, `night`, `midnight`) with editable `HH:MM` start times, configurable crossfade window (`1–45 min`), one-click period preview, manual scene lock with instant *Resume Automatic*, and Car Studio preservation across scenic transitions.
+- **Wallpaper Studio**: searchable, filterable 12-scene local library (`Cascade Overlook` + `Scenic Touring`), favourites, local wallpaper import (`JPEG`/`PNG`/`WebP`, IndexedDB persistence), keyless **Wikimedia Commons** photographic search with inline photographer/license attribution, and optional **Unsplash** / **Pexels** API key support.
+- **Car Studio**: searchable vehicle studio (`Integrated Challenger`, `Obsidian Muscle Coupe`, `Stealth GT Fastback`, `Phantom Apex Supercar`, plus transparent `PNG`/`WebP` local car import with real `<canvas>` alpha inspection) that composites vehicles onto car-free scenic plates with dynamic volumetric headlight cones and never stacks two cars.
+- **Compact Music Bar & Windows SMTC Bridge**: taskbar-safe bottom dock and drawer player connected to Windows 10/11 `GlobalSystemMediaTransportControlsSessionManager` (Spotify, Apple Music, browsers, VLC) and/or a local audio file, with truthful idle state when no session is active.
+- **Live Telemetry**: real battery percentage/charging state (graceful `Unavailable` fallback where unsupported) and real Open-Meteo weather with automatic location or city search (`°C`/`°F`), never fabricated demo numbers.
 
 ## Quick start (any device, in a browser)
 

@@ -221,7 +221,7 @@
   },
   "night": {
     "source": "assets/night/scene.jpg",
-    "sourceSha1": "36bc660ed15b48a1ce9644ab26d0566fe2a3cc5c",
+    "sourceSha1": "ec20cfaeed37fc57fd62b988dc16f9117fe68ccc",
     "ridge": [
       [0.0000, 0.2886],
       [0.0213, 0.6055],
@@ -267,7 +267,7 @@
       [0.8723, 0.5614],
       [0.8936, 0.5553],
       [0.9149, 0.5534],
-      [0.9362, 0.5532],
+      [0.9362, 0.5533],
       [0.9574, 0.5521],
       [0.9787, 0.5521],
       [1.0000, 0.3067]
@@ -276,7 +276,7 @@
   },
   "midnight": {
     "source": "assets/midnight/scene.jpg",
-    "sourceSha1": "feb79da3a1afb91028a6c308703faee7eb8c2664",
+    "sourceSha1": "47cab0c82d8edd365e0c128088aa9faee9ad0023",
     "ridge": [
       [0.0000, 0.2885],
       [0.0213, 0.6055],

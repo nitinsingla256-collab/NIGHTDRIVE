@@ -12,6 +12,7 @@ hosts/macos/NIGHTDRIVE.app/
 # Windows host (.NET) build output
 hosts/windows/**/bin/
 hosts/windows/**/obj/
+hosts/windows/**/publish-verify/
 *.user
 *.suo
 .vs/

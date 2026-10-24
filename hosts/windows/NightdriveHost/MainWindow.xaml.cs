@@ -14,6 +14,7 @@ public partial class MainWindow : Window
 {
     private BatteryHelper? _battery;
     private ConnectivityHelper? _connectivity;
+    private MediaSessionHelper? _media;
     private TrayIconHelper? _tray;
     private HwndSource? _hwndSource;
     private bool _desktopAttached;
@@ -186,6 +187,7 @@ public partial class MainWindow : Window
             "styles.css",
             "sw.js",
             @"assets\ridges.json",
+            @"assets\studio-catalog.json",
             @"assets\morning\scene.jpg",
             @"assets\day\scene.jpg",
             @"assets\golden-hour\scene.jpg",
@@ -276,7 +278,12 @@ public partial class MainWindow : Window
             LogTime("WebView2 event subscriptions installed before Navigate");
 
             _battery = new BatteryHelper(WebView) { OnLogTime = LogTime };
-            _connectivity = new ConnectivityHelper(WebView) { OnLogTime = LogTime };
+            _media = new MediaSessionHelper(WebView) { OnLogTime = LogTime };
+            _connectivity = new ConnectivityHelper(WebView)
+            {
+                OnLogTime = LogTime,
+                MediaSession = _media
+            };
             _connectivity.OnHideFallback = HideFallback;
             _connectivity.OnDrawerOpen = HandleDrawerOpenFromPage;
             _connectivity.OnDrawerClosed = HandleDrawerClosedFromPage;
@@ -379,9 +386,10 @@ public partial class MainWindow : Window
         {
             if (_bridgesStarted) return;
             _bridgesStarted = true;
-            LogTime("DOM ready: starting battery/connectivity bridges");
+            LogTime("DOM ready: starting battery/connectivity/media bridges");
             _battery?.Start();
             _connectivity?.Start();
+            _media?.Start();
         }
         catch (Exception ex)
         {
@@ -560,6 +568,7 @@ public partial class MainWindow : Window
             if (_drawerRaised) DesktopInteraction.Sink(hwnd);
             if (_hwndSource != null) _hwndSource.RemoveHook(WindowMessageHook);
             _battery?.Dispose();
+            _media?.Dispose();
             _connectivity?.Dispose();
             _tray?.Dispose();
             LogTime("Closed handler: complete");
@@ -578,7 +587,15 @@ public partial class MainWindow : Window
             if (e.Key == System.Windows.Input.Key.Escape)
             {
                 e.Handled = true;
-                WpfApp.Current.Shutdown();
+                if (_drawerRaised)
+                {
+                    PostDrawerMessage("drawer:close");
+                    HandleDrawerClosedFromPage();
+                }
+                else
+                {
+                    WpfApp.Current.Shutdown();
+                }
             }
         }
         catch (Exception ex)

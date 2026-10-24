@@ -58,6 +58,7 @@ public class ConnectivityHelper : IDisposable
     public Action? OnDrawerOpen { get; set; }
     public Action? OnDrawerClosed { get; set; }
     public Action<string>? OnLogTime { get; set; }
+    public MediaSessionHelper? MediaSession { get; set; }
 
     public ConnectivityHelper(WebView2 webView)
     {
@@ -205,6 +206,42 @@ public class ConnectivityHelper : IDisposable
             else if (action == "open_focus_settings")
             {
                 Launch("ms-settings:quietmomentshome", null);
+            }
+            else if (action == "open_display_settings")
+            {
+                Launch("ms-settings:display", null);
+            }
+            else if (action == "open_network_settings")
+            {
+                Launch("ms-settings:network", null);
+            }
+            else if (action == "media:toggle")
+            {
+                if (MediaSession != null) _ = MediaSession.TogglePlayPauseAsync();
+            }
+            else if (action == "media:play")
+            {
+                if (MediaSession != null) _ = MediaSession.PlayAsync();
+            }
+            else if (action == "media:pause")
+            {
+                if (MediaSession != null) _ = MediaSession.PauseAsync();
+            }
+            else if (action == "media:next")
+            {
+                if (MediaSession != null) _ = MediaSession.SkipNextAsync();
+            }
+            else if (action == "media:prev")
+            {
+                if (MediaSession != null) _ = MediaSession.SkipPreviousAsync();
+            }
+            else if (action.StartsWith("media:seek:", StringComparison.Ordinal))
+            {
+                if (MediaSession != null) _ = MediaSession.SeekSecondsAsync(action.Substring("media:seek:".Length));
+            }
+            else if (action == "media:query")
+            {
+                if (MediaSession != null) _ = MediaSession.PublishSnapshotAsync();
             }
             else if (action == "hide_fallback")
             {

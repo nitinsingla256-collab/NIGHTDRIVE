@@ -41,6 +41,36 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - name: Build NightdriveHost
+      - name: Build NightdriveHost (Release)
         working-directory: hosts/windows/NightdriveHost
         run: dotnet build NightdriveHost.csproj -c Release
+      - name: Publish NightdriveHost & verify bundled engine assets
+        working-directory: hosts/windows/NightdriveHost
+        shell: pwsh
+        run: |
+          dotnet publish NightdriveHost.csproj -c Release -r win-x64 --self-contained false -o publish-verify
+          $expected = @(
+            "publish-verify/NightdriveHost.exe",
+            "publish-verify/engine/index.html",
+            "publish-verify/engine/script.js",
+            "publish-verify/engine/app.js",
+            "publish-verify/engine/styles.css",
+            "publish-verify/engine/sw.js",
+            "publish-verify/engine/assets/ridges.json",
+            "publish-verify/engine/assets/studio-catalog.json",
+            "publish-verify/engine/assets/morning/scene.jpg",
+            "publish-verify/engine/assets/day/scene.jpg",
+            "publish-verify/engine/assets/golden-hour/scene.jpg",
+            "publish-verify/engine/assets/dusk/scene.jpg",
+            "publish-verify/engine/assets/night/scene.jpg",
+            "publish-verify/engine/assets/midnight/scene.jpg",
+            "publish-verify/engine/assets/night/headlights.jpg",
+            "publish-verify/engine/assets/library/alpine-dawn.jpg",
+            "publish-verify/engine/assets/cars/obsidian-muscle-coupe.png"
+          )
+          foreach ($path in $expected) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing published asset: $path"
+            }
+          }
+          Write-Host "Verified $($expected.Count) published Windows host & engine files."

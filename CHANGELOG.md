@@ -1,5 +1,41 @@
 # Changelog
 
+## [3.0.0] — 2026-10-24
+
+Final visual redesign and functional Studio wallpaper system.
+
+### Added
+- **Wallpaper Studio (`engine/app.js`, `engine/assets/studio-catalog.json`, `engine/assets/library/*`).**
+  Ships 12 high-bitrate `1376×768` 4:4:4 plates across two packs (*Cascade Overlook*
+  and car-free *Scenic Touring*), instant keyword/tag search, 11 category &
+  time-of-day filters, favourites, local image import into IndexedDB, keyless
+  Wikimedia Commons search with inline attribution, and optional Unsplash/Pexels
+  API key configuration.
+- **Car Studio (`engine/assets/cars/*`, `#car-beam-canvas`).** Separate vehicle
+  studio with 3 transparent RGBA studio vehicles (*Obsidian Muscle Coupe*,
+  *Stealth GT Fastback*, *Phantom Apex Supercar*), real `<canvas>` alpha-channel
+  verification on local imports (opaque car photos apply cleanly as complete
+  wallpapers rather than faking cutouts), framing sliders, and dynamic
+  coordinate-mapped headlight beams.
+- **Editable Time Schedule.** Customise `HH:MM` start times for all six daily
+  periods, adjust crossfade duration (`1–45 min`), preview any period, and
+  preserve selected Car Studio overlays across automatic scenic transitions.
+- **Music Bar & Windows SMTC (`MediaSessionHelper.cs`).** Native WinRT
+  `GlobalSystemMediaTransportControlsSessionManager` bridge in the Windows host
+  plus local audio track playback in browser/desktop mode, compact taskbar-safe
+  desktop dock, and truthful unavailable state when idle.
+- **Weather City Search & Units.** Open-Meteo geocoding city lookup alongside
+  browser geolocation, `°C`/`°F` unit toggle, and clear status messaging.
+
+### Changed
+- **Scene & Clock Pipeline.** Rebuilt `night` and `midnight` lunar composites in
+  the upper-right sky (`seam < 0.035`), rebuilt 1:1 `1376×768` coordinate-locked
+  `headlights.jpg` overlays for `dusk`/`night`/`midnight`, replaced the clipped
+  depth-occluded clock with a tall condensed translucent sky clock (`Oswald`)
+  clamped above every scene's measured ridge (`222 px+` clearance on `1366×768`),
+  removed the visible left-edge rail so the closed desktop is unobstructed, and
+  reserved taskbar-safe clearance (`50–52 px`) at the bottom edge.
+
 ## [1.7.0] — 2026-10-24
 
 Functional phase: the clock gained the depth effect, the controls became real,
