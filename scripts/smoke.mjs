@@ -109,7 +109,11 @@ export async function runEngineSmoke({
   settleMs = 60,
   plateSize = [1376, 768],
   viewport = [1920, 1080],
-  availablePaths = null   // null = everything resolves; array = allowlist
+  availablePaths = null,  // null = everything resolves; array = allowlist
+  // Fixed wall-clock time (local) so results never depend on when the suite
+  // runs. 10:00 is solidly inside the "day" period, so no blend window is open
+  // and both layers hold the same period unless a test says otherwise.
+  clock = [10, 0]
 } = {}) {
   const source = readFileSync(join(root, 'engine/script.js'), 'utf8');
   const errors = [];
@@ -125,7 +129,7 @@ export async function runEngineSmoke({
   };
 
   // ── The two scene layers, with their five children each ──────────────────
-  const layerChildren = ['scene-fallback', 'svg-scene', 'scene-img', 'svg-headlights', 'headlight-img'];
+  const layerChildren = ['scene-fallback', 'svg-scene', 'scene-img', 'svg-headlights', 'headlight-img', 'car-img'];
   const makeLayer = (name) => {
     const layer = makeElement('div');
     layer.setAttribute('data-layer', name);
@@ -133,7 +137,7 @@ export async function runEngineSmoke({
     for (const cls of layerChildren) {
       const child = makeElement('div');
       child.classList.add(cls);
-      if (cls === 'scene-img' || cls === 'headlight-img') {
+      if (cls === 'scene-img' || cls === 'headlight-img' || cls === 'car-img') {
         child.tagName = 'IMG';
         // Real browsers report intrinsic size; default to 16:9 so the
         // landscape path is what the stub exercises.
@@ -243,6 +247,16 @@ export async function runEngineSmoke({
     // No geolocation, no getBattery — exercises the honest fallbacks.
   };
 
+  // Pin the clock. PERIODS is keyed on local wall-clock minutes, so without
+  // this the suite changes behaviour as the day rolls through blend windows.
+  class FixedDate extends Date {
+    constructor(...args) {
+      if (args.length === 0) super(2000, 0, 1, clock[0], clock[1], 0, 0);
+      else super(...args);
+    }
+    static now() { return new Date(2000, 0, 1, clock[0], clock[1], 0, 0).getTime(); }
+  }
+
   const sandbox = {
     document,
     navigator: navigatorStub,
@@ -264,7 +278,7 @@ export async function runEngineSmoke({
     matchMedia: windowStub.matchMedia,
     getComputedStyle: windowStub.getComputedStyle,
     URL,
-    Date,
+    Date: FixedDate,
     Math,
     JSON,
     Promise,
@@ -328,7 +342,9 @@ export async function runEngineSmoke({
     focus: layer.style.getPropertyValue('--focus'),
     plateUrl: layer.style.getPropertyValue('--plate-url'),
     contain: layer.classList.contains('layer--contain'),
-    imgContain: layer._kids.get('.scene-img').classList.contains('scene-img--contain')
+    imgContain: layer._kids.get('.scene-img').classList.contains('scene-img--contain'),
+    carSrc: layer._kids.get('.car-img').getAttribute('src') || layer._kids.get('.car-img').src || '',
+    hasCar: layer.classList.contains('layer--has-car')
   });
 
   return {

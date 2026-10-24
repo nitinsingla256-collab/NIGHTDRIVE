@@ -142,7 +142,8 @@
   },
   "regeneration": {
     "scripts/rebuild-assets.py": "Rebuilds night and midnight from the dusk master and re-encodes every plate at 4:4:4 / q95.",
-    "scripts/build-headlights.py": "Rebuilds the beam overlay for dusk, night and midnight from the original beam plate."
+    "scripts/build-headlights.py": "Rebuilds the beam overlay for dusk, night and midnight from the original beam plate.",
+    "scripts/rebuild-assets.py --derived-only": "Rewrites only night and midnight from the shipped dusk master, for changes to the moon composite. Skips the badge retouch (the dusk master already has it) and leaves the other four plates byte-identical, so they do not gain a JPEG generation."
   },
   "knownLimitations": [
     "All six plates are 1376x768 and landscape-only. That is a true 1:1 match at 1366x768 and a slight downscale at 1080p, but 1440p and 4K displays still upscale. The precise fix is six identically composed 2560x1440 masters; no external paths are referenced because those files do not exist yet.",
@@ -173,6 +174,19 @@
         "midnight": 3.7
       },
       "note": "The plates carried a small '392' model badge on the grille. The brief forbids baked-in model names and logos, so it was retouched out of all six."
+    },
+    "moonComposite": {
+      "applied": true,
+      "periods": [
+        "night",
+        "midnight"
+      ],
+      "source": "assets/moon.jpg",
+      "note": "The lunar disc is composited from a photographic plate, replacing the ~40 px moon in the original renders. The glow around it is written into a square patch, and that patch's own edges are now faded to exactly zero: without the window the patch boundary was a ~2.5-level step across the sky gradient, visible as a faint box at 1:1. scripts/rebuild-assets.py measures the remaining seam and refuses to write a plate above 1.0 level.",
+      "measuredSeamLevels": {
+        "night": 0.41,
+        "midnight": 0.31
+      }
     }
   },
   "slots": {

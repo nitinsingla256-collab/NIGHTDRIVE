@@ -1,6 +1,6 @@
 [package]
 name = "nightdrive-host"
-version = "1.5.0"
+version = "1.6.0"
 description = "Cross-platform desktop host for NIGHTDRIVE"
 authors = ["nitinsingla256-collab"]
 license = ""

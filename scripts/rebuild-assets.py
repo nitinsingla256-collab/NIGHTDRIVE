@@ -146,7 +146,7 @@ def composite_moon(plate: Image.Image, moon: Image.Image, gain: float, warm) -> 
     m = Image.fromarray(ma.astype(np.uint8), "RGBA").resize((dia, dia), Image.LANCZOS)
 
     base = np.asarray(plate, dtype=np.float32)
-    halo_px = int(dia * 3.4)
+    halo_px = int(dia * 5.0)
     halo = (
         m.convert("RGB")
         .resize((halo_px, halo_px), Image.LANCZOS)
@@ -154,6 +154,15 @@ def composite_moon(plate: Image.Image, moon: Image.Image, gain: float, warm) -> 
         .filter(ImageFilter.GaussianBlur(dia * 0.5))
     )
     h_arr = np.asarray(halo, dtype=np.float32) * 0.10
+    # The halo is a square patch, so its own edges must be faded to exactly
+    # zero. Without this the patch boundary is a ~2.5-level step across the sky
+    # gradient, and on a smooth dusk sky that reads as a visible faint box
+    # around the moon (the blur radius alone does not reach the corner).
+    hy_, hx_ = np.mgrid[0:halo_px, 0:halo_px]
+    hd = np.sqrt((hx_ - halo_px / 2) ** 2 + (hy_ - halo_px / 2) ** 2) / (halo_px / 2)
+    hw = np.clip((1.0 - hd) / 0.55, 0, 1)
+    hw = hw * hw * (3 - 2 * hw)  # smoothstep, 0 at the patch edge
+    h_arr = h_arr * hw[:, :, None]
     hx, hy = int(MOON_CX - halo_px / 2), int(MOON_CY - halo_px / 2)
     x0, y0 = max(hx, 0), max(hy, 0)
     x1, y1 = min(hx + halo_px, w), min(hy + halo_px, h)
@@ -164,6 +173,33 @@ def composite_moon(plate: Image.Image, moon: Image.Image, gain: float, warm) -> 
 
     plate.paste(m, (int(round(MOON_CX - dia / 2)), int(round(MOON_CY - dia / 2))), m)
     return plate
+
+
+def halo_seam_level(plate: Image.Image) -> float:
+    """
+    Mean luma step across the halo patch's left/right boundaries, in levels.
+
+    The halo is composited in a square, so any residual inside it stops dead at
+    that square's edge. Measured on the columns either side of the edge, away
+    from the disc itself, against the same measurement 15 px further out: the
+    sky gradient is smooth over that distance, so the difference between the two
+    is the seam. ~0 means the patch is invisible; 2+ levels is a faint box on a
+    smooth sky.
+    """
+    lum = np.asarray(plate.convert("RGB"), dtype=np.float32).mean(axis=2)
+    half = int(round(2 * MOON_R * 5.0 / 2))
+    top = max(0, int(MOON_CY - MOON_R * 4))
+    bottom = min(lum.shape[0] - 2, int(MOON_CY + MOON_R * 4))
+    rows = slice(top, bottom)
+
+    def step_at(edge_x: int) -> float:
+        at = np.abs(lum[rows, edge_x] - lum[rows, edge_x + 1]).mean()
+        near = np.abs(lum[rows, edge_x - 15] - lum[rows, edge_x - 14]).mean()
+        return float(at - near)
+
+    left = int(round(MOON_CX - half))
+    right = int(round(MOON_CX + half))
+    return max(abs(step_at(left)), abs(step_at(right)))
 
 
 # ── grade ─────────────────────────────────────────────────────────────────────
@@ -237,7 +273,13 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--from", dest="src", default=None,
                     help="folder of pristine <period>.jpg plates to read instead of engine/assets")
+    ap.add_argument("--derived-only", action="store_true",
+                    help="rewrite only night/midnight from the shipped dusk master. Use after "
+                         "changing the moon composite: the other four plates are already correct "
+                         "and re-encoding them would cost a JPEG generation for nothing.")
     args = ap.parse_args()
+    if args.derived_only and args.src:
+        ap.error("--derived-only reads the shipped plates; drop --from")
 
     src_dir = Path(args.src) if args.src else None
 
@@ -261,6 +303,27 @@ def main() -> int:
         plates[period] = composite_moon(Image.fromarray(graded), moon, gain, warm)
         print(f"  derived {period} from dusk master")
 
+    if args.derived_only:
+        # The shipped dusk master is already retouched, so the derived plates
+        # inherit a badge-free grille and must not be retouched again (a second
+        # inpaint pass would soften the grille for no gain).
+        manifest_text = (ASSETS / "manifest.json").read_text()
+        if '"modelBadge"' not in manifest_text or '"applied": true' not in manifest_text:
+            print("  ERROR: no retouch receipt — the dusk master may still carry the badge",
+                  file=sys.stderr)
+            return 1
+        for period in DERIVED:
+            dest = ASSETS / period / "scene.jpg"
+            plates[period].save(dest, **JPEG_KW)
+            seam = halo_seam_level(plates[period])
+            print(f"  wrote {period}/scene.jpg ({dest.stat().st_size // 1024} KB, "
+                  f"halo seam {seam:.2f} levels)")
+            if seam > 1.0:
+                print(f"  ERROR: halo patch is still visible on {period} ({seam:.2f} levels)",
+                      file=sys.stderr)
+                return 1
+        return 0
+
     # 2. Retouch the model badge out of every plate.
     retouch = {}
     for period in PERIODS:
@@ -278,7 +341,9 @@ def main() -> int:
         dest = ASSETS / period / "scene.jpg"
         dest.parent.mkdir(parents=True, exist_ok=True)
         plates[period].save(dest, **JPEG_KW)
-        print(f"  wrote {period}/scene.jpg ({dest.stat().st_size // 1024} KB)")
+        seam = halo_seam_level(plates[period]) if period in DERIVED else None
+        extra = f", halo seam {seam:.2f} levels" if seam is not None else ""
+        print(f"  wrote {period}/scene.jpg ({dest.stat().st_size // 1024} KB){extra}")
 
     # 4. Record the retouch in the manifest. validate.mjs checks this, because a
     #    pixel heuristic cannot tell a badge glyph from the grille's own lighting

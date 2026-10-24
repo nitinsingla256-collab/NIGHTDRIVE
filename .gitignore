@@ -36,3 +36,8 @@ desktop.ini
 # Local audit / scratch renders
 .audit/
 .audit*/
+
+# Supplied art-direction reference — provenance not verified, kept local only.
+# docs/reference/README.md documents what it shows and why it cannot ship.
+docs/reference/*.png
+docs/reference/*.jpg

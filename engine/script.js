@@ -708,7 +708,19 @@ async function ensureAssets(periodId) {
     ? await loadFirstAvailable(assets.headlights)
     : null;
 
-  assetsCache[periodId] = { scene: sceneAsset, headlights: hlAsset, orientation: orientation };
+  // Optional transparent car layer. Absent by design today; when a period does
+  // supply one it is composited over the plate, which is what makes the car and
+  // the landscape independently replaceable.
+  const carAsset = assets.cursor && assets.cursor.length
+    ? await loadFirstAvailable(assets.cursor)
+    : null;
+
+  assetsCache[periodId] = {
+    scene: sceneAsset,
+    headlights: hlAsset,
+    cursor: carAsset,
+    orientation: orientation
+  };
   assetsReady[periodId] = true;
   return assetsCache[periodId];
 }
@@ -746,14 +758,19 @@ function applyPlateAspect(layer, img, src) {
   else img.addEventListener('load', apply, { once: true });
 }
 
-function fillLayer(layer, period, sceneAsset, headlightAsset) {
+function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
   const fallback = layer.querySelector('.scene-fallback');
   const svgScene = layer.querySelector('.svg-scene');
   const sceneImg = layer.querySelector('.scene-img');
   const svgLights = layer.querySelector('.svg-headlights');
   const headImg = layer.querySelector('.headlight-img');
+  const carImg = layer.querySelector('.car-img');
 
   fallback.setAttribute('data-period', period.id);
+  if (carImg) {
+    carImg.removeAttribute('src');
+    carImg.classList.remove('is-loaded');
+  }
   svgScene.innerHTML = '';
   svgLights.innerHTML = '';
   svgLights.classList.remove('is-on');
@@ -785,6 +802,15 @@ function fillLayer(layer, period, sceneAsset, headlightAsset) {
     sceneImg.removeAttribute('src');
     sceneImg.classList.remove('is-loaded', 'scene-img--contain');
     layer.classList.remove('layer--contain');
+  }
+
+  // Optional car layer, above the plate and below the beams.
+  if (carImg && carAsset && carAsset.kind === 'raster') {
+    carImg.src = carAsset.src;
+    carImg.classList.add('is-loaded');
+    layer.classList.add('layer--has-car');
+  } else if (carImg) {
+    layer.classList.remove('layer--has-car');
   }
 
   // Headlights (layer's intrinsic image — opacity controlled by caller)
@@ -949,7 +975,7 @@ async function ensureLayerPopulated(layer, periodId) {
   const period = periodById(periodId);
   if (!period) return;
   const cached = await ensureAssets(periodId);
-  fillLayer(layer, period, cached.scene, cached.headlights);
+  fillLayer(layer, period, cached.scene, cached.headlights, cached.cursor);
 }
 
 let lastAccentId = null;
@@ -1093,7 +1119,7 @@ async function showPeriodManual(period, instant) {
   const front = frontIsA ? layerA : layerB;
   const back = frontIsA ? layerB : layerA;
 
-  fillLayer(back, period, cached.scene, cached.headlights);
+  fillLayer(back, period, cached.scene, cached.headlights, cached.cursor);
   const hlOp = period.headlights ? HEADLIGHT_OPACITY : 0;
   setHeadlightOpacity(back, hlOp);
 

@@ -8,6 +8,12 @@ The six time-of-day plates used by the NIGHTDRIVE wallpaper engine.
 - `morning`, `day`, `golden-hour` — closer, front-on three-quarter view.
 - `dusk`, `night`, `midnight` — the same frame, progressively darker.
 
+The lunar disc in `night`/`midnight` comes from `moon.jpg` and is composited
+with a glow whose square patch is faded to zero at its edges — the patch
+boundary used to be a ~2.5-level step and read as a faint box. `npm run` the
+rebuild script with `--derived-only` to redo those two plates alone; it measures
+the remaining seam and refuses to write above 1.0 level.
+
 `night` and `midnight` are rebuilt from the `dusk` master by
 `scripts/rebuild-assets.py` (a fitted per-channel colour grade plus a
 composited moon), because the originals shipped at 0.59–0.82 bits/pixel and
@@ -59,12 +65,45 @@ day: {
 - **`portrait`** — optional. On portrait displays the engine shows it whole
   over a blurred copy of itself. If absent, the landscape plate is used the
   same way.
-- **`cursor`** — optional transparent car layer drawn over the plate. Empty
+- **`cursor`** — optional transparent car layer drawn over the plate and under
+  the headlight beams (`.car-img`, `z-index: 1` vs the beams' `2`). Empty
   today; the car is part of the photograph. Filling this in is what enables
-  "pick a car, pick a backdrop" without re-authoring six plates per car.
+  "pick a car, pick a backdrop" without re-authoring six plates per car. A car
+  cut-out is placed with `--car-fit` / `--car-position` instead of being
+  stretched, so a portrait or off-centre cut-out keeps its proportions.
 - **`focus`** — the car's position as `x% y%`. Used as `object-position`, so
   narrow and portrait viewports crop *toward the car* instead of the middle of
   the valley.
+
+## Checking a candidate asset
+
+`scripts/check-candidate.py` scores any image against the brief before it is
+worth wiring into `SCENE_ASSETS`:
+
+```bash
+python3 scripts/check-candidate.py candidate.jpg          # resolution, saturation, branding
+npm run test:assets                                       # the same report for what ships
+```
+
+It hard-fails below 0.92 MP (1280×720) and reports upscaling at 1366/1920/2560
+wide, mean saturation, and the five regions where licence plates, badges and
+watermarks normally hide. Resolution is the only hard gate, deliberately: a
+detail/sharpness score tracks content, not quality — a misty valley scores lower
+than a forest, so it is reported and never used to pass or fail.
+
+`npm test` enforces the parts that can be checked without Python: every plate
+must be ≥1280×720, keep 4:4:4 chroma, encode at ≥1.0 bits/pixel, be at least
+1.33:1, and **all six must share one frame size** — crossfades stack two periods,
+so a differently sized replacement would visibly shift the composition at the
+blend.
+
+## Art direction reference
+
+`docs/reference/` documents the reference image the project owner supplied
+(Porsche GT3 RS-style car on a snowy alpine ledge at sunset) and why it is
+direction rather than a shippable plate — it is 735×490, needs 3.5× upscaling on
+a 1440p screen, and has a "GT11" licence plate baked in. The image itself is
+git-ignored because its licensing is unverified.
 
 ## Missing / unsuitable assets
 
@@ -81,8 +120,14 @@ Nothing is referenced that does not exist. The gaps, in priority order:
    dusk/night/midnight share the other frame. Composition is consistent within
    each group but the car's scale shifts at the midday→dusk boundary.
 5. **No EV/sports car** in the current plates — they show a muscle car. The
-   target direction names Porsche GT3 RS-style vehicles; that needs new plates,
-   not retouching.
+   target direction names Porsche GT3 RS-style vehicles, in a snowy alpine
+   setting rather than a green summer valley; that needs new plates, not
+   retouching.
+6. **No `car.png` cut-out** for any period, so the car slot is untested against
+   real art. A cut-out must be a transparent PNG at the plate's frame size, or
+   smaller with `--car-fit: none` and an explicit position, and its lighting and
+   contact shadow must match the plate it is dropped onto — a car lit for
+   midday would look pasted onto a dusk plate.
 
 ## What an ideal replacement set looks like
 
@@ -102,8 +147,12 @@ The engine picks these up automatically if you overwrite them in place:
 ## Regenerating
 
 ```bash
-# rebuild night/midnight from dusk, retouch the badge, re-encode
+# rebuild night/midnight from dusk, retouch the badge, re-encode all six
 python3 scripts/rebuild-assets.py
+
+# re-derive ONLY night/midnight from the shipped dusk master (moon changes);
+# the other four plates stay byte-identical
+python3 scripts/rebuild-assets.py --derived-only
 
 # regenerate the beam overlay for dusk/night/midnight
 python3 scripts/build-headlights.py

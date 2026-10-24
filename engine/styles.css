@@ -130,11 +130,40 @@ body {
   display: block;
 }
 
-/* Headlights overlay — screen blend so black bg disappears */
+/* Optional transparent car layer. Sits above the plate and below the beams so
+   the volumetric headlight cone still falls in front of it. Hidden by default:
+   it only appears when a period actually supplies a car image, which keeps the
+   car and the landscape independently replaceable without shipping anything
+   today. `--car-fit` lets a period describe how its car layer should be placed
+   (its own crop box) instead of guessing a single global transform. */
+.car-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: var(--car-fit, contain);
+  object-position: var(--car-position, 50% 50%);
+  display: none;
+  image-rendering: auto;
+  pointer-events: none;
+  /* Above the plate, below the beams: a car layer is a photograph of a car, so
+     the volumetric cone has to fall in front of it rather than be occluded by
+     the transparent cut-out. */
+  z-index: 1;
+}
+
+.car-img.is-loaded {
+  display: block;
+}
+
+/* Headlights overlay — screen blend so black bg disappears.
+   z-index 2 keeps the beams in front of an optional .car-img layer (z-index 1)
+   and behind the colour-temperature overlay. */
 .svg-headlights.is-on,
 .headlight-img.is-on {
   display: block;
   mix-blend-mode: screen;
+  z-index: 2;
   /* opacity set dynamically by JS based on headlight fade */
 }
 

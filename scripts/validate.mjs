@@ -13,6 +13,8 @@ const ok = (msg) => console.log('  ✓ ' + msg);
 const fail = (msg) => { console.error('  ✗ ' + msg); failures++; };
 const check = (cond, msg) => (cond ? ok(msg) : fail(msg));
 
+const css = readFileSync(join(engine, 'styles.css'), 'utf8');
+
 console.log('Engine files');
 for (const f of ['index.html', 'script.js', 'styles.css', 'sw.js']) check(existsSync(join(engine, f)), f);
 
@@ -57,7 +59,7 @@ console.log('Service worker (offline support)');
 const sw = readFileSync(join(engine, 'sw.js'), 'utf8');
 try { new vm.Script(sw, { filename: 'sw.js' }); ok('sw.js parses'); } catch (e) { fail('sw.js syntax: ' + e.message); }
 const cacheName = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1];
-check(cacheName === 'nightdrive-v1.5.0', `cache name is ${cacheName || 'missing'}`);
+check(cacheName === 'nightdrive-v1.6.0', `cache name is ${cacheName || 'missing'}`);
 check(/serviceWorker/.test(html) && /register\(\s*['"]sw\.js['"]/.test(html), 'index.html registers the service worker');
 
 const preList = sw.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
@@ -141,6 +143,7 @@ function readJpeg(path) {
 }
 
 const scenePeriods = ['morning', 'day', 'golden-hour', 'dusk', 'night', 'midnight'];
+const frames = new Set();
 for (const period of scenePeriods) {
   const rel = `assets/${period}/scene.jpg`;
   const p = join(engine, rel);
@@ -154,7 +157,16 @@ for (const period of scenePeriods) {
   check(!chroma || (chroma.h === luma.h && chroma.v === luma.v),
     `${rel} keeps full chroma resolution (4:4:4)`);
   check(j.bpp >= 1.0, `${rel} is ${j.bpp.toFixed(2)} bits/pixel (>= 1.0, not over-compressed)`);
+  // A landscape plate narrower than 4:3 starts to lose the car or the horizon
+  // when the engine covers a 16:9 frame.
+  check(j.width / j.height >= 1.33,
+    `${rel} aspect ${(j.width / j.height).toFixed(2)} covers a 16:9 frame`);
+  frames.add(`${j.width}x${j.height}`);
 }
+// Every period is stacked against its neighbour mid-crossfade, so unequal
+// frame sizes would visibly shift the composition at the blend.
+check(frames.size <= 1,
+  `all six periods share one frame size (${[...frames.keys()].join(', ')})`);
 
 console.log('No baked-in branding');
 // The brief forbids baked-in model names, logos and watermarks. The plates
@@ -233,6 +245,39 @@ try {
   const wide = await runEngineSmoke({ availablePaths: ['day/scene.jpg'] });
   check(wide.layers.every((l) => /scene\.jpg$/.test(l.src) && !l.contain),
     'landscape viewport keeps using the landscape plate, uncovered');
+
+  // A 3:2 source (the aspect of the supplied art-direction reference) is a
+  // legitimate landscape ratio: it must cover the frame, not be contained.
+  const threeTwo = await runEngineSmoke({ plateSize: [1500, 1000], availablePaths: ['day/scene.jpg'] });
+  check(threeTwo.layers.every((l) => !l.contain && !l.imgContain),
+    '3:2 plate covers the frame rather than being letterboxed');
+  const fourThree = await runEngineSmoke({ plateSize: [1440, 1080], availablePaths: ['day/scene.jpg'] });
+  check(fourThree.layers.every((l) => !l.contain),
+    '4:3 plate covers the frame');
+
+  // Car and landscape are independently replaceable: shipping no car layer must
+  // leave the plate untouched, and supplying one must composite it.
+  // Crossfade windows must hold two different periods at once. 15:50 sits in
+  // the 20-minute day -> goldenHour blend window, so the two layers must differ.
+  const blending = await runEngineSmoke({ clock: [15, 50], availablePaths: [
+    'day/scene.jpg', 'golden-hour/scene.jpg'
+  ] });
+  check(blending.ok, 'crossfade window boots cleanly');
+  check(new Set(blending.sceneSrcs).size === 2,
+    `blend window holds two different plates (${blending.sceneSrcs.join(' + ')})`);
+
+  const noCar = await runEngineSmoke({ availablePaths: ['day/scene.jpg'] });
+  check(noCar.layers.every((l) => !l.hasCar && !l.carSrc),
+    'no car layer ships, so the photographic plate is used as-is');
+  const withCar = await runEngineSmoke({ availablePaths: ['day/scene.jpg', 'day/car.png'] });
+  check(withCar.layers.every((l) => l.hasCar && /car\.png$/.test(l.carSrc)),
+    'a supplied car layer is composited over the plate independently of the scene');
+  // Paint order cannot be observed without a renderer, so the declaration that
+  // controls it is asserted: the car sits above the plate and under the beams.
+  const carZ = Number((css.match(/\.car-img \{[^}]*?z-index:\s*(\d+)/) || [])[1]);
+  const beamZ = Number((css.match(/\.headlight-img\.is-on \{[^}]*?z-index:\s*(\d+)/) || [])[1]);
+  check(carZ === 1 && beamZ > carZ,
+    `car layer paints above the plate and below the beams (car z ${carZ}, beams z ${beamZ})`);
 } catch (e) {
   fail('smoke test crashed: ' + e.message);
 }

@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.6.0] — 2026-10-24
+
+Third visual pass: the image pipeline is now measurable, and the car is a
+separate layer from the landscape. No framework, no new runtime dependency, no
+customisation UI.
+
+### Added
+- **`scripts/check-candidate.py`** — scores any image against the brief before
+  it is wired in: resolution against 1366/1920/2560-wide displays, mean
+  saturation, and the five regions where licence plates, badges and watermarks
+  hide. Exit 1 on a hard failure, so it works in a sourcing step. `npm run
+  test:assets` runs it over the shipped plates.
+- **An optional `.car-img` layer** in both scene layers, above the plate and
+  below the headlight beams (`z-index: 1` vs `2`). It stays hidden until a
+  period actually supplies `SCENE_ASSETS[*].cursor`, so the car and the
+  background are independently replaceable without re-authoring six plates per
+  car. `--car-fit` / `--car-position` place a cut-out instead of stretching it.
+- **A measured art-direction reference** in `docs/reference/`: what the supplied
+  image establishes (GT3 RS-style car, snowy alpine ledge, low warm sun) and the
+  numbers that rule it out as a plate — 735×490, 3.48× upscale at 1440p, "GT11"
+  licence plate baked in. The image is git-ignored, its licensing is unverified.
+
+### Fixed
+- **A visible box around the moon on the night plates.** The lunar glow was
+  written into a square patch whose edges were never faded, leaving a measured
+  ~2.5-level step across the sky gradient — faint at a glance, obvious on a
+  smooth dusk sky. The patch is now windowed to exactly zero at its boundary
+  (seam 0.41 / 0.31 levels on night / midnight) and `rebuild-assets.py` refuses
+  to write a plate above 1.0. Only night and midnight were re-derived (new
+  `--derived-only`); the other four plates are byte-identical, so they did not
+  gain a JPEG generation.
+- **The car layer painted over the headlight beams**, which would have occluded
+  the cone that is supposed to fall across it. Paint order is now explicit and
+  asserted, since no renderer is available to observe it.
+- **`npm test` was time-dependent.** The period table is keyed on wall-clock
+  minutes, so a run inside a 20-minute blend window saw layer B in the next
+  period and four checks failed. The smoke harness now pins the clock to 10:00
+  and asserts the blend separately at 15:50, where two plates must coexist.
+
+### Changed
+- `npm test` also fails on a plate narrower than 4:3, and on any period whose
+  frame size differs from the others — a differently sized replacement would
+  visibly shift the composition mid-crossfade.
+- Version 1.6.0, service-worker cache `nightdrive-v1.6.0`, so clients pick up
+  the new markup instead of a cached stylesheet without the car rule.
+
+### Not done (deliberately)
+- No car customisation interface, no system-control or engine-start redesign.
+- No new plates. The six shipped plates still show a muscle car in a green
+  valley, not the alpine GT3 RS direction; sourcing six identically composed
+  2560×1440 plates needs assets this environment cannot generate.
+
 ## [1.5.0] — 2026-10-24
 
 Second visual pass: brief-compliance and asset-pipeline work. No framework, no

@@ -1,6 +1,6 @@
 {
   "name": "nightdrive",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "private": true,
   "description": "NIGHTDRIVE — cinematic time-aware desktop wallpaper",
   "type": "module",
@@ -9,6 +9,7 @@
   "scripts": {
     "start": "node scripts/serve.mjs",
     "test": "node scripts/validate.mjs",
+    "test:assets": "python3 scripts/check-candidate.py engine/assets/*/scene.jpg",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
