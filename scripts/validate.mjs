@@ -127,9 +127,11 @@ if (existsSync(csprojPath)) {
   check(/drawbridge message/.test(connectivity) && /TryGetWebMessageAsString/.test(connectivity),
     'native bridge logs and parses page messages');
 
-  // C# cannot overload methods by accessibility or extern modifier alone;
-  // catch P/Invoke vs wrapper signature collisions on Linux before Windows CI.
+  // C# cannot overload methods by accessibility or extern modifier alone, and
+  // UseWPF + UseWindowsForms + ImplicitUsings makes unqualified MessageBox
+  // ambiguous; catch both on Linux before Windows CI runs.
   const csMethodDupes = [];
+  const csAmbiguousRefs = [];
   const csFiles = ['App.xaml.cs', 'MainWindow.xaml.cs', 'BatteryHelper.cs',
                    'ConnectivityHelper.cs', 'DesktopInteraction.cs',
                    'TrayIconHelper.cs', 'WallpaperHelper.cs'];
@@ -148,11 +150,20 @@ if (existsSync(csprojPath)) {
       if (seen.has(sig)) csMethodDupes.push(`${f}: ${sig}`);
       seen.add(sig);
     }
+    if (/\busing\s+System\.Windows\s*;/.test(src) &&
+        !/\busing\s+MessageBox\s*=/.test(src) &&
+        /(?<![.\w])MessageBox\s*\./.test(src)) {
+      csAmbiguousRefs.push(`${f}: unqualified MessageBox`);
+    }
   }
   check(csMethodDupes.length === 0,
     csMethodDupes.length
       ? `duplicate C# method signature(s): ${csMethodDupes.join('; ')}`
       : 'no duplicate C# method signatures across Windows host');
+  check(csAmbiguousRefs.length === 0,
+    csAmbiguousRefs.length
+      ? `ambiguous WPF/WinForms reference(s): ${csAmbiguousRefs.join('; ')}`
+      : 'no ambiguous WPF/WinForms MessageBox references');
 }
 
 console.log('Scene image quality');
