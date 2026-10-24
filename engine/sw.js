@@ -8,7 +8,7 @@
 
 'use strict';
 
-const CACHE_NAME = 'nightdrive-v1.6.0';
+const CACHE_NAME = 'nightdrive-v1.7.0';
 
 // Paths are relative to this worker, so the app also works when it is
 // hosted from a sub-directory. Every file listed here is validated by
@@ -16,7 +16,9 @@ const CACHE_NAME = 'nightdrive-v1.6.0';
 const PRECACHE_URLS = [
   './index.html',
   './script.js',
+  './app.js',
   './styles.css',
+  './assets/ridges.json',
   './engine-start.wav',
   './assets/morning/scene.jpg',
   './assets/morning/scene.svg',

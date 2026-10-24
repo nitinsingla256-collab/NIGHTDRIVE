@@ -335,7 +335,6 @@ const hudTimeEl = document.getElementById('hud-time');
 const batteryWidget = document.getElementById('battery-widget');
 const batteryFill = document.getElementById('battery-fill');
 const batteryPctEl = document.getElementById('battery-pct');
-const batteryStatusEl = document.getElementById('battery-status');
 
 /* ══════════════════════════════════════════════
    TIME HELPERS
@@ -437,17 +436,17 @@ function updateHUD() {
   const h = d.getHours();
   const min = String(d.getMinutes()).padStart(2, '0');
 
-  // Format 12-hour AM/PM time
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  const h12Str = String(h12).padStart(2, '0');
-  const timeStr = h12Str + ':' + min + ' ' + ampm;
+  // 24-hour by default. The brief asks for a desktop clock, not an alarm clock;
+  // a leading zero is kept so the glyph count never changes and the oversized
+  // type does not shift sideways once an hour.
+  const timeStr = SETTINGS.clock24
+    ? String(h).padStart(2, '0') + ':' + min
+    : (h % 12 || 12) + ':' + min + ' ' + (h >= 12 ? 'PM' : 'AM');
 
   // Date: "TUESDAY · 22 SEPTEMBER 2026"
   if (hudDateEl) hudDateEl.textContent =
     DAY_NAMES[d.getDay()].toUpperCase() + ' · ' + d.getDate() + ' ' + MONTH_NAMES[d.getMonth()].toUpperCase() + ' ' + d.getFullYear();
 
-  // Time: "06:42 AM"
   if (hudTimeEl) hudTimeEl.textContent = timeStr;
 }
 
@@ -462,13 +461,32 @@ function renderBattery(pct, charging) {
   batteryFill.classList.toggle('is-low', !charging && pctClamped <= 20);
   batteryFill.classList.toggle('is-charging', charging);
   batteryPctEl.textContent = pctClamped + '%';
-  if (batteryStatusEl) batteryStatusEl.textContent = charging ? 'Charging' : '';
+  setBatteryStatus(charging);
   if (batteryWidget) batteryWidget.classList.remove('is-unavailable');
+}
+
+/**
+ * Charging used to be written into a `#battery-status` element that no longer
+ * exists. The state now lives on the widget itself: a class for the glow, and
+ * an accessible label so it is not colour-only.
+ */
+function setBatteryStatus(charging) {
+  if (!batteryWidget) return;
+  batteryWidget.classList.toggle('is-charging', !!charging);
+  // The existing CSS hooks the state off the fill element.
+  if (batteryFill) batteryFill.classList.toggle('is-charging', !!charging);
+  const pct = batteryPctEl ? batteryPctEl.textContent : '';
+  batteryWidget.setAttribute('aria-label',
+    'Battery ' + (pct || 'unknown') + (charging ? ', charging' : ''));
+  batteryWidget.title = charging ? 'Battery - charging' : 'Battery';
 }
 
 function showBatteryUnavailable() {
   if (batteryPctEl) batteryPctEl.textContent = 'N/A';
-  if (batteryStatusEl) batteryStatusEl.textContent = 'No API';
+  if (batteryWidget) {
+    batteryWidget.title = 'Battery state is not available in this viewer';
+    batteryWidget.setAttribute('aria-label', 'Battery state unavailable');
+  }
   if (batteryWidget) batteryWidget.classList.add('is-unavailable');
 }
 
@@ -501,7 +519,7 @@ function initBattery() {
     // Don't register the browser API — native bridge takes priority.
     // Show a placeholder until the first message arrives.
     if (batteryPctEl) batteryPctEl.textContent = '…';
-    if (batteryStatusEl) batteryStatusEl.textContent = '';
+    // No native host answered; the browser API is tried below.
     // No native host answered (e.g. Lively Wallpaper) — use the browser API.
     setTimeout(function () {
       if (!nativeHostActive) initBrowserBattery();
@@ -813,6 +831,10 @@ function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
     layer.classList.remove('layer--has-car');
   }
 
+  // Same plate, clipped to everything below the measured skyline. This is the
+  // copy that paints back over the clock (see the PHASE 2 section at the end).
+  applyForegroundFor(layer, period.id);
+
   // Headlights (layer's intrinsic image — opacity controlled by caller)
   if (period.headlights && headlightAsset) {
     if (headlightAsset.kind === 'svg') {
@@ -926,6 +948,11 @@ function setHeadlightOpacity(layer, opacity) {
  * During the morning transition (night → morning) they fade out.
  */
 function headlightOpacityFor(periodId, blendState) {
+  // A manual override wins over the time of day until the user goes back to
+  // automatic, so dragging the switch cannot be undone a frame later.
+  if (typeof headlightOverride !== 'undefined' && headlightOverride !== null) {
+    return headlightOverride ? HEADLIGHT_OPACITY : 0;
+  }
   const p = periodById(periodId);
   if (!p || !p.headlights) return 0;
   // The layer's own opacity already fades the whole plate in and out, so the
@@ -1002,6 +1029,7 @@ function rafTick() {
       layerB.style.opacity = '0';
       layersOpacity[0] = 1;
       layersOpacity[1] = 0;
+      syncForegroundOpacity(1, 0);
     }
 
     const period = periodById(needTo);
@@ -1033,6 +1061,7 @@ function rafTick() {
       layerB.style.opacity = String(ratio);
       layersOpacity[0] = aOpacity;
       layersOpacity[1] = ratio;
+      syncForegroundOpacity(aOpacity, ratio);
     }
 
     const hlOpA = headlightOpacityFor(needFrom, blend);
@@ -1112,9 +1141,10 @@ async function showPeriodManual(period, instant) {
   const sceneAsset = cached.scene;
   const headlightAsset = cached.headlights;
 
-  // Restore CSS-driven transitions for manual mode
-  layerA.style.transition = 'opacity 1.6s cubic-bezier(0.4,0,0.2,1)';
-  layerB.style.transition = 'opacity 1.6s cubic-bezier(0.4,0,0.2,1)';
+  // Restore CSS-driven transitions for manual mode, at the user's speed.
+  const dur = (SETTINGS.transitionMs || TRANSITION_MS) / 1000;
+  layerA.style.transition = 'opacity ' + dur + 's cubic-bezier(0.4,0,0.2,1)';
+  layerB.style.transition = 'opacity ' + dur + 's cubic-bezier(0.4,0,0.2,1)';
 
   const front = frontIsA ? layerA : layerB;
   const back = frontIsA ? layerB : layerA;
@@ -1152,7 +1182,7 @@ async function showPeriodManual(period, instant) {
     } else {
       pendingId = null;
     }
-  }, TRANSITION_MS);
+  }, SETTINGS.transitionMs || TRANSITION_MS);
 }
 
 /* ══════════════════════════════════════════════
@@ -1191,42 +1221,55 @@ function setModeAuto() {
    BOOT
    ══════════════════════════════════════════════ */
 
-// 1. Determine initial scene from clock
-const _initM = minutesNow();
-const _initBlend = computeBlend(_initM);
+// Boot is a function, called once at the very bottom of this file.
+//
+// It used to run inline here, which meant it executed before the settings,
+// ridge data and car/background state further down had been initialised. Those
+// are `const`/`let`, so anything reached in the same tick threw a temporal-dead-
+// zone ReferenceError - the "white wallpaper on first launch" class of bug.
+// Deferring the call keeps one source of truth and removes the ordering trap
+// entirely.
+function boot() {
+  // 1. Determine initial scene from clock
+  const initM = minutesNow();
+  const initBlend = computeBlend(initM);
 
-// Populate layerA with the "from" scene synchronously enough
-// (ensureAssets is async but the rAF won't paint until assets resolve)
-layerAId = _initBlend.from;
-layerBId = _initBlend.to;
+  // Populate layerA with the "from" scene synchronously enough
+  // (ensureAssets is async but the rAF won't paint until assets resolve)
+  layerAId = initBlend.from;
+  layerBId = initBlend.to;
 
-// Pre-load both scenes that may be visible at startup
-Promise.all([
-  ensureLayerPopulated(layerA, _initBlend.from),
-  ensureLayerPopulated(layerB, _initBlend.to)
-]).then(function () {
-  logToHost("6. First actual engine frame (assets fetched and painted)");
-  
-  // STAGE 3: Notify host to hide fallback Image because first frame is ready
-  if (PLATFORM.webview2) {
-    window.chrome.webview.postMessage(JSON.stringify({ action: 'hide_fallback' }));
-  }
+  // Pre-load both scenes that may be visible at startup
+  return Promise.all([
+    ensureLayerPopulated(layerA, initBlend.from),
+    ensureLayerPopulated(layerB, initBlend.to)
+  ]).then(function () {
+    logToHost("6. First actual engine frame (assets fetched and painted)");
 
-  // STAGE 4: Load secondary non-essential features
-  updateHUD();
-  clockTimer = setInterval(updateHUD, CLOCK_MS);
-  logToHost("7. Essential widgets becoming visible");
-  
-  initBattery();
-  initWeather();
-  initParticles();
-  startParticles();
-  logToHost("8. Optional features becoming ready");
-  
-  // Start transitions and cinematic audio glitch
-  setModeAuto();
-  runCinematicStartup();
-});
+    // STAGE 3: Notify host to hide fallback Image because first frame is ready
+    if (PLATFORM.webview2) {
+      window.chrome.webview.postMessage(JSON.stringify({ action: 'hide_fallback' }));
+    }
+
+    // STAGE 4: Load secondary non-essential features
+    updateHUD();
+    clockTimer = setInterval(updateHUD, CLOCK_MS);
+    logToHost("7. Essential widgets becoming visible");
+
+    initBattery();
+    initWeather();
+    initParticles();
+    startParticles();
+    logToHost("8. Optional features becoming ready");
+
+    // The startup effect is NOT run here: a wallpaper refresh is not an engine
+    // start. `maybeAutoStartup` plays it only when the saved preference asks
+    // for that, and the drawer button plays it on demand.
+    setModeAuto();
+    applySavedAppearance();
+    maybeAutoStartup();
+  });
+}
 
 /* ══════════════════════════════════════════════
    CINEMATIC PARTICLES (DUST)
@@ -1340,6 +1383,12 @@ function startParticles() {
   if (particlesRunning || !ctx) return;
   particlesRunning = true;
   requestAnimationFrame(particlesLoop);
+}
+
+/** Stop the dust field without tearing down its canvas. */
+function stopParticles() {
+  particlesRunning = false;
+  if (ctx && particlesCanvas) ctx.clearRect(0, 0, particlesCanvas.width, particlesCanvas.height);
 }
 
 // initParticles is called after first frame; startParticles() once booted.
@@ -1457,14 +1506,14 @@ layerB.style.transition = 'none';
    ══════════════════════════════════════════════ */
 function runCinematicStartup() {
   const engineAudio = document.getElementById('engine-audio');
-  const btnStart = document.getElementById('btn-start-engine');
-  const audioUnlock = document.getElementById('audio-unlock');
 
   // Attempt to play audio
   const playAudio = () => {
     // Check if src exists and is not just the empty page URL
     if (engineAudio && engineAudio.getAttribute('src')) {
-      engineAudio.volume = 1.0;
+      // Respect the saved volume/mute; the startup sound is not a reason to
+      // jump to full volume.
+      applyAudioSettings();
       engineAudio.play().catch(e => {
         console.warn("Autoplay blocked by browser. Audio will play on first click.");
       });
@@ -1501,13 +1550,6 @@ function runCinematicStartup() {
     }
   };
 
-  // If browser blocks audio on load, listen for first click to play
-  document.addEventListener('click', () => {
-    if (engineAudio && engineAudio.paused) {
-      engineAudio.play().catch(() => { });
-    }
-  }, { once: true });
-
   // 1. Initial delay
   setTimeout(() => {
     // 2. Play audio
@@ -1519,7 +1561,701 @@ function runCinematicStartup() {
   }, 800);
 }
 
-// runCinematicStartup is called after first frame
-// Focus / Do Not Disturb button
-const focusBtn = document.getElementById('focus-btn');
-if (focusBtn) focusBtn.addEventListener('click', () => openSystemSettings('focus'));
+// runCinematicStartup is triggered by the drawer's Start engine action only —
+// never by a page load. See `startEngine()`.
+
+/* ══════════════════════════════════════════════════════════════════════════
+   PHASE 2 — SETTINGS, DEPTH CLOCK, PLAYBACK, PUBLIC API
+   ══════════════════════════════════════════════════════════════════════════
+   Kept in one place at the end of the engine so the boot path above stays
+   readable. Everything here is additive: with no saved settings and no ridge
+   data the wallpaper looks and behaves exactly as it did before.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Settings store ────────────────────────────────────────────────────────
+   localStorage holds small preferences only. Imported images are blobs and
+   live in IndexedDB (see app.js) — putting a 4 MB wallpaper in localStorage
+   would blow the 5 MB quota and take the settings down with it. */
+
+const SETTINGS_KEY = 'nightdrive.settings.v2';
+
+const DEFAULT_SETTINGS = {
+  // Clock
+  clockVisible: true,
+  clock24: true,
+  clockScale: 100,          // %
+  clockOpacity: 85,         // %
+  clockOffset: 0,           // % of viewport height
+  // Scene
+  mode: 'scenes',           // 'scenes' | 'custom'
+  useDesign: false,         // custom mode: whole wallpaper vs scene (bg+car)
+  autoScene: true,
+  sceneId: 'day',           // used when autoScene is off
+  headlights: null,         // null = follow the period, true/false = override
+  playback: true,
+  transitionMs: 1600,
+  // Appearance
+  brightness: 100,          // % (app-level dimming)
+  motion: true,
+  particles: true,
+  // Audio
+  volume: 70,
+  muted: false,
+  startupEffect: 'manual',  // 'manual' | 'once' | 'always'
+  // Drawer
+  drawerEnabled: true,
+  drawerPinned: false,
+  // Custom scene framing
+  carFit: 'contain',
+  carScale: 100,
+  carX: 50,
+  carY: 74,
+  bgFit: 'cover',
+  bgScale: 100,
+  bgX: 50,
+  bgY: 50,
+  bgBrightness: 100
+};
+
+function cloneSettings(src) {
+  const out = {};
+  Object.keys(DEFAULT_SETTINGS).forEach(function (k) { out[k] = src[k]; });
+  return out;
+}
+
+function loadSettings() {
+  const base = cloneSettings(DEFAULT_SETTINGS);
+  try {
+    if (typeof localStorage === 'undefined' || !localStorage) return base;
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return base;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') return base;
+    Object.keys(base).forEach(function (k) {
+      const v = parsed[k];
+      if (v === undefined || v === null) return;
+      if (typeof base[k] === 'boolean' && typeof v === 'boolean') base[k] = v;
+      else if (typeof base[k] === 'number' && typeof v === 'number' && isFinite(v)) base[k] = v;
+      else if (typeof base[k] === 'string' && typeof v === 'string') base[k] = v;
+    });
+  } catch (e) {
+    // Corrupt or unreadable storage must never stop the wallpaper booting.
+    console.warn('[NIGHTDRIVE] settings unreadable, using defaults', e);
+  }
+  return base;
+}
+
+const SETTINGS = loadSettings();
+
+function saveSettings(patch) {
+  if (patch) Object.keys(patch).forEach(function (k) {
+    if (k in DEFAULT_SETTINGS) SETTINGS[k] = patch[k];
+  });
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage) {
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS));
+    }
+  } catch (e) {
+    emit('storage-error', { message: 'Settings could not be saved (storage full or blocked).' });
+  }
+  emit('settings', SETTINGS);
+  return SETTINGS;
+}
+
+function resetSettings() {
+  Object.keys(DEFAULT_SETTINGS).forEach(function (k) { SETTINGS[k] = DEFAULT_SETTINGS[k]; });
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage) localStorage.removeItem(SETTINGS_KEY);
+  } catch (e) { /* nothing else to do */ }
+  emit('settings', SETTINGS);
+}
+
+/* ── Tiny event bus (app.js subscribes; the engine never depends on it) ──── */
+
+const listeners = {};
+function on(evt, fn) {
+  (listeners[evt] || (listeners[evt] = [])).push(fn);
+  return function off() {
+    listeners[evt] = (listeners[evt] || []).filter(function (f) { return f !== fn; });
+  };
+}
+function emit(evt, data) {
+  (listeners[evt] || []).forEach(function (fn) {
+    try { fn(data); } catch (e) { console.warn('[NIGHTDRIVE] listener failed', e); }
+  });
+}
+
+/* ── Ridge data: measured skyline per scene ──────────────────────────────── */
+
+const RIDGES_URL = 'assets/ridges.json';
+let RIDGES = null;
+
+/**
+ * Load the measured skylines. Failure is not fatal: without them the clock
+ * simply sits in front of the scene at its default position, which is the
+ * graceful fallback the brief asks for rather than a half-applied effect.
+ */
+function loadRidges() {
+  const xhr = new XMLHttpRequest();
+  xhr.onload = function () {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (data && typeof data === 'object') {
+          RIDGES = data;
+          emit('ridges', RIDGES);
+          refreshDepth();
+        }
+      } catch (e) { console.warn('[NIGHTDRIVE] ridge data invalid', e); }
+    }
+  };
+  xhr.onerror = function () { /* fallback: no occlusion */ };
+  xhr.open('GET', RIDGES_URL, true);
+  xhr.send();
+}
+
+function ridgeFor(periodId) {
+  if (!RIDGES || !RIDGES[periodId]) return null;
+  const r = RIDGES[periodId];
+  return r && Array.isArray(r.ridge) && r.ridge.length > 1 ? r : null;
+}
+
+/** Linear interpolation of ridge height at normalised x. */
+function ridgeAt(ridge, x) {
+  if (!ridge || !ridge.length) return 0.6;
+  const clamped = Math.max(0, Math.min(1, x));
+  for (let i = 0; i < ridge.length - 1; i++) {
+    const [x0, y0] = ridge[i];
+    const [x1, y1] = ridge[i + 1];
+    if (clamped >= x0 && clamped <= x1) {
+      const t = x1 === x0 ? 0 : (clamped - x0) / (x1 - x0);
+      return y0 + (y1 - y0) * t;
+    }
+  }
+  return ridge[ridge.length - 1][1];
+}
+
+/** CSS polygon describing everything below the skyline. */
+function ridgePolygon(ridge) {
+  const pts = ridge.map(function (p) { return (p[0] * 100).toFixed(3) + '% ' + (p[1] * 100).toFixed(3) + '%'; });
+  return 'polygon(0% 100%, ' + pts.join(', ') + ', 100% 100%)';
+}
+
+/**
+ * The rectangle a `background-size: cover` plate actually occupies, so a
+ * percentage clip-path lands on image pixels instead of element pixels at any
+ * aspect ratio (a 3:2 window crops the sides, a 21:9 one crops top/bottom).
+ */
+function plateRect(iw, ih, vw, vh, fx, fy) {
+  const scale = Math.max(vw / iw, vh / ih);
+  const w = iw * scale;
+  const h = ih * scale;
+  return { left: (vw - w) * fx, top: (vh - h) * fy, width: w, height: h };
+}
+
+/**
+ * The rectangle a `contain` fit occupies. Portrait windows show a tall plate
+ * whole over a blurred backdrop, so the foreground copy has to use the same
+ * rectangle or the occlusion lands in the wrong place.
+ */
+function plateRectContain(iw, ih, vw, vh) {
+  const scale = Math.min(vw / iw, vh / ih);
+  const w = iw * scale;
+  const h = ih * scale;
+  return { left: (vw - w) / 2, top: (vh - h) / 2, width: w, height: h };
+}
+
+function focusFor(periodId) {
+  const entry = SCENE_ASSETS[periodId];
+  if (!entry || !entry.focus) return [0.62, 0.74];
+  return entry.focus.map(function (v) { return parseFloat(v) / 100; });
+}
+
+const fgA = document.querySelector('[data-fg="a"]');
+const fgB = document.querySelector('[data-fg="b"]');
+const clockEl = document.getElementById('clock');
+const stageEl = document.getElementById('stage');
+const fgPeriods = { a: null, b: null };
+
+function fgForLayer(layer) { return layer === layerA ? fgA : (layer === layerB ? fgB : null); }
+
+function applyForegroundFor(layer, periodId) {
+  applyCarToLayer(layer);
+  const img = fgForLayer(layer);
+  if (!img) return;
+  const key = layer === layerA ? 'a' : 'b';
+  const data = ridgeFor(periodId);
+  // No ridge, or a user-supplied wallpaper: nothing to occlude with.
+  if (!data || customBackdrop || SETTINGS.clockVisible === false) {
+    img.classList.remove('is-active');
+    img.removeAttribute('src');
+    fgPeriods[key] = null;
+    return;
+  }
+  const src = (SCENE_ASSETS[periodId] && SCENE_ASSETS[periodId].landscape[0]) || null;
+  if (!src) { img.classList.remove('is-active'); return; }
+  fgPeriods[key] = periodId;
+  if (img.getAttribute('src') !== src) img.src = src;
+  img.classList.add('is-active');
+  layoutForeground(img, periodId, layer);
+  if (img.complete !== true) {
+    img.addEventListener('load', function () { layoutForeground(img, periodId, layer); }, { once: true });
+  }
+}
+
+function layoutForeground(img, periodId, layer) {
+  const data = ridgeFor(periodId);
+  if (!data) return;
+  const iw = img.naturalWidth || 1376;
+  const ih = img.naturalHeight || 768;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const f = focusFor(periodId);
+  const contained = layer && layer.classList && layer.classList.contains('layer--contain');
+  const rect = contained
+    ? plateRectContain(iw, ih, vw, vh)
+    : plateRect(iw, ih, vw, vh, f[0], f[1]);
+  img.style.left = rect.left.toFixed(2) + 'px';
+  img.style.top = rect.top.toFixed(2) + 'px';
+  img.style.width = rect.width.toFixed(2) + 'px';
+  img.style.height = rect.height.toFixed(2) + 'px';
+  img.style.clipPath = ridgePolygon(data.ridge);
+  img.style.webkitClipPath = ridgePolygon(data.ridge);
+}
+
+function syncForegroundOpacity(a, b) {
+  if (fgA) fgA.style.opacity = String(a);
+  if (fgB) fgB.style.opacity = String(b);
+}
+
+/**
+ * Place the clock against the active scene's skyline.
+ *
+ * `--clock-y` is the ridge height, and the clock's transform lifts its box by
+ * 70 % of its own height, so the lower 30 % falls behind the silhouette. The
+ * offset slider moves it in viewport units without changing that relationship.
+ */
+function placeClock(periodId) {
+  if (!clockEl) return;
+  const data = customBackdrop ? null : ridgeFor(periodId);
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  if (!data) {
+    clockEl.style.setProperty('--clock-x', '35%');
+    clockEl.style.setProperty('--clock-y', '52%');
+    clockEl.classList.add('no-depth');
+    return;
+  }
+  clockEl.classList.remove('no-depth');
+
+  const entry = SCENE_ASSETS[periodId] || {};
+  const imgSrc = entry.landscape && entry.landscape[0];
+  // The plate's own aspect decides the cover rectangle. Reading it from the
+  // loaded scene image keeps this correct for portrait plates too.
+  const sceneImg = (layerA && layerA.querySelector('.scene-img'));
+  const useScene = sceneImg && sceneImg.naturalWidth ? sceneImg : null;
+  const iw = useScene ? useScene.naturalWidth : (imgSrc ? 1376 : vw);
+  const ih = useScene ? useScene.naturalHeight : 768;
+  const f = focusFor(periodId);
+  const contained = layerA && layerA.classList && layerA.classList.contains('layer--contain');
+  const rect = contained
+    ? plateRectContain(iw, ih, vw, vh)
+    : plateRect(iw, ih, vw, vh, f[0], f[1]);
+
+  const cx = data.clock && typeof data.clock.x === 'number' ? data.clock.x : 0.35;
+  const x = rect.left + cx * rect.width;
+  const y = rect.top + ridgeAt(data.ridge, cx) * rect.height;
+
+  clockEl.style.setProperty('--clock-x', x.toFixed(1) + 'px');
+  clockEl.style.setProperty('--clock-y', (y + (SETTINGS.clockOffset / 100) * vh).toFixed(1) + 'px');
+}
+
+const BRIGHT_PERIODS = { day: true, goldenHour: true, morning: true };
+
+function applyClockChrome(periodId) {
+  const bright = !!BRIGHT_PERIODS[periodId];
+  if (clockEl) clockEl.classList.toggle('is-bright', bright);
+  document.body.classList.toggle('scene-bright', bright);
+}
+
+function refreshDepth() {
+  const periodId = currentId || layerAId || (SETTINGS.sceneId || 'day');
+  [ [layerA, 'a'], [layerB, 'b'] ].forEach(function (pair) {
+    const layer = pair[0];
+    const key = pair[1];
+    if (!layer) return;
+    const img = fgForLayer(layer);
+    const pid = fgPeriods[key] || (layer === layerA ? layerAId : layerBId);
+    if (img && pid && img.classList.contains('is-active')) layoutForeground(img, pid, layer);
+  });
+  placeClock(periodId);
+  applyClockChrome(periodId);
+}
+
+/* ── Appearance from settings ───────────────────────────────────────────── */
+
+function applyClockSettings() {
+  if (!clockEl) return;
+  clockEl.classList.toggle('is-hidden', !SETTINGS.clockVisible);
+  clockEl.style.setProperty('--clock-scale', String(SETTINGS.clockScale / 100));
+  clockEl.style.setProperty('--clock-opacity', String(SETTINGS.clockOpacity / 100));
+  if (fgA) fgA.style.display = SETTINGS.clockVisible ? '' : 'none';
+  if (fgB) fgB.style.display = SETTINGS.clockVisible ? '' : 'none';
+  updateHUD();
+  refreshDepth();
+}
+
+function applyBrightness() {
+  // 40–110 % maps to 0.4–1.1; the CSS filter dims the photograph only.
+  const level = Math.max(0.4, Math.min(1.1, SETTINGS.brightness / 100));
+  document.documentElement.style.setProperty('--stage-brightness', level.toFixed(3));
+}
+
+function applySavedAppearance() {
+  applyClockSettings();
+  applyBrightness();
+  applyAudioSettings();
+  if (SETTINGS.mode === 'scenes' && SETTINGS.autoScene === false) {
+    const p = periodById(SETTINGS.sceneId);
+    if (p) showPeriodManual(p, true);
+  }
+  if (SETTINGS.playback === false) setPlayback(false);
+  if (SETTINGS.motion === false) stopParticles();
+  emit('ready', null);
+}
+
+/* ── Audio ──────────────────────────────────────────────────────────────── */
+
+function engineAudioEl() { return document.getElementById('engine-audio'); }
+
+function applyAudioSettings() {
+  const audio = engineAudioEl();
+  if (!audio) return;
+  audio.volume = SETTINGS.muted ? 0 : Math.max(0, Math.min(1, SETTINGS.volume / 100));
+}
+
+function setVolume(pct) {
+  const value = Math.max(0, Math.min(100, Math.round(pct)));
+  saveSettings({ volume: value });
+  if (SETTINGS.muted && value > 0) saveSettings({ muted: false });
+  applyAudioSettings();
+  // The Windows host owns the real system mixer; a browser cannot touch it, so
+  // this is only sent when a host has actually answered us.
+  if (PLATFORM.webview2 && nativeHostActive) postToHost('set_volume:' + value);
+  emit('volume', value);
+}
+
+function setMuted(muted) {
+  saveSettings({ muted: !!muted });
+  applyAudioSettings();
+  if (PLATFORM.webview2 && nativeHostActive) postToHost('set_mute:' + (muted ? 1 : 0));
+  emit('muted', !!muted);
+}
+
+/* ── Playback: pause the scene, keep the clock ──────────────────────────── */
+
+function setPlayback(playing) {
+  saveSettings({ playback: !!playing });
+  if (playing) {
+    if (mode === 'auto') startRaf();
+    if (SETTINGS.particles && SETTINGS.motion) startParticles();
+  } else {
+    stopRaf();
+    particlesRunning = false;
+  }
+  emit('playback', !!playing);
+}
+
+/* ── Headlights override ────────────────────────────────────────────────── */
+
+let headlightOverride = null;
+
+function setHeadlights(value) {
+  // value: true | false | null (follow the period)
+  headlightOverride = value;
+  saveSettings({ headlights: value });
+  const layerList = [layerA, layerB];
+  layerList.forEach(function (layer) {
+    if (!layer) return;
+    const op = value === null ? 0 : (value ? HEADLIGHT_OPACITY : 0);
+    if (value !== null) setHeadlightOpacity(layer, op);
+  });
+  emit('headlights', value);
+}
+
+/* ── Custom scene: car layer, background, complete design ───────────────── */
+
+let customCar = null;      // { src, fit, x, y, scale, opacity }
+let customBackdrop = null; // { src, fit, ... }
+let customDesign = null;   // { src }
+
+function applyCarToLayer(layer) {
+  if (!layer) return;
+  const img = layer.querySelector('.car-img');
+  if (!img) return;
+  if (!customCar || !customCar.src) return;   // fillLayer cleared it already
+  img.style.setProperty('--car-fit', customCar.fit === 'cover' ? 'cover' : 'contain');
+  img.classList.add('is-loaded');
+  if (img.getAttribute('src') !== customCar.src) img.src = customCar.src;
+  layer.classList.add('layer--has-car');
+}
+
+function setCar(asset, opts) {
+  const o = opts || {};
+  customCar = asset && asset.src ? {
+    src: asset.src,
+    fit: o.fit || SETTINGS.carFit,
+    scale: o.scale || SETTINGS.carScale,
+    x: typeof o.x === 'number' ? o.x : SETTINGS.carX,
+    y: typeof o.y === 'number' ? o.y : SETTINGS.carY
+  } : null;
+  [layerA, layerB].forEach(function (layer) {
+    if (!layer) return;
+    const img = layer.querySelector('.car-img');
+    if (!img) return;
+    if (customCar) {
+      applyCarToLayer(layer);
+      img.style.setProperty('--car-position', customCar.x + '% ' + customCar.y + '%');
+      img.style.transform = 'scale(' + (customCar.scale / 100) + ')';
+      img.style.transformOrigin = customCar.x + '% ' + customCar.y + '%';
+    } else {
+      img.removeAttribute('src');
+      img.classList.remove('is-loaded');
+      img.style.transform = '';
+      layer.classList.remove('layer--has-car');
+    }
+  });
+  emit('car', customCar);
+}
+
+function setBackground(asset, opts) {
+  const o = opts || {};
+  customBackdrop = asset && asset.src ? {
+    src: asset.src,
+    fit: o.fit || SETTINGS.bgFit,
+    scale: o.scale || SETTINGS.bgScale,
+    x: typeof o.x === 'number' ? o.x : SETTINGS.bgX,
+    y: typeof o.y === 'number' ? o.y : SETTINGS.bgY,
+    brightness: o.brightness || SETTINGS.bgBrightness
+  } : null;
+  const el = document.getElementById('custom-bg');
+  if (!el) return;
+  if (customBackdrop) {
+    el.src = customBackdrop.src;
+    el.style.setProperty('--bg-fit', customBackdrop.fit === 'contain' ? 'contain' : 'cover');
+    el.style.setProperty('--bg-position', customBackdrop.x + '% ' + customBackdrop.y + '%');
+    el.style.setProperty('--bg-scale', String(customBackdrop.scale / 100));
+    el.style.setProperty('--bg-brightness', String(customBackdrop.brightness / 100));
+    if (stageEl) stageEl.classList.add('is-custom');
+    // An arbitrary photograph can be bright anywhere; the stronger halo is the
+    // safe default, and the clock's own opacity control does the rest.
+    if (clockEl) clockEl.classList.add('is-bright');
+    document.body.classList.remove('scene-bright');
+    // The built-in skyline no longer describes what is on screen.
+    refreshDepth();
+  } else {
+    el.removeAttribute('src');
+    if (stageEl) stageEl.classList.remove('is-custom');
+    refreshDepth();
+  }
+  emit('background', customBackdrop);
+}
+
+function setDesign(asset) {
+  setBackground(asset && asset.src ? { src: asset.src } : null, { fit: 'cover', scale: 100, x: 50, y: 50, brightness: 100 });
+  customDesign = asset || null;
+  if (customDesign) {
+    saveSettings({ mode: 'custom' });
+  } else {
+    saveSettings({ mode: 'scenes' });
+  }
+  emit('design', customDesign);
+}
+
+/* ── Engine start ───────────────────────────────────────────────────────── */
+
+/**
+ * The deliberate, user-requested engine start. This is the only path that
+ * plays the ignition sound or shakes anything — a wallpaper refresh never
+ * calls it unless the saved preference explicitly says "every load".
+ */
+function startEngine(opts) {
+  const silent = opts && opts.silent;
+  const audio = engineAudioEl();
+  if (audio && !silent) {
+    audio.volume = SETTINGS.muted ? 0 : Math.max(0, Math.min(1, SETTINGS.volume / 100));
+    try { audio.currentTime = 0; } catch (e) { /* not seekable yet */ }
+    const p = audio.play();
+    if (p && p.catch) p.catch(function () { emit('audio-blocked', null); });
+  }
+  if (REDUCED_MOTION.matches || SETTINGS.motion === false) {
+    emit('engine', { animated: false });
+    return;
+  }
+  [layerA, layerB].forEach(function (layer) {
+    if (!layer) return;
+    const hlImg = layer.querySelector('.headlight-img');
+    const svgHl = layer.querySelector('.svg-headlights');
+    [hlImg, svgHl].forEach(function (el) {
+      if (!el) return;
+      el.classList.remove('headlight-flare');
+      void el.offsetWidth;
+      el.classList.add('headlight-flare');
+      setTimeout(function () { el.classList.remove('headlight-flare'); }, 1200);
+    });
+  });
+  if (clockEl) {
+    clockEl.classList.remove('clock-start');
+    void clockEl.offsetWidth;
+    clockEl.classList.add('clock-start');
+    setTimeout(function () { clockEl.classList.remove('clock-start'); }, 1800);
+  }
+  emit('engine', { animated: true });
+}
+
+function maybeAutoStartup() {
+  const pref = SETTINGS.startupEffect;
+  if (pref === 'always') { startEngine(); return; }
+  if (pref === 'once') {
+    let seen = false;
+    try { seen = sessionStorage.getItem('nightdrive.started') === '1'; } catch (e) { seen = false; }
+    if (!seen) {
+      try { sessionStorage.setItem('nightdrive.started', '1'); } catch (e) { /* private mode */ }
+      startEngine();
+    }
+  }
+  // 'manual' (the default): do nothing. The drawer has a Start engine button.
+}
+
+/* ── Scene control ──────────────────────────────────────────────────────── */
+
+function setAutoScene(enabled) {
+  saveSettings({ autoScene: !!enabled });
+  if (enabled) {
+    mode = 'auto';
+    setModeAuto();
+  } else {
+    mode = 'manual';
+    stopRaf();
+    const p = periodById(currentId || SETTINGS.sceneId || 'day');
+    if (p) showPeriodManual(p, true);
+  }
+  emit('scene', { auto: mode === 'auto', id: currentId });
+}
+
+function stepScene(direction) {
+  const order = PERIODS.map(function (p) { return p.id; });
+  const id = currentId || layerAId || SETTINGS.sceneId;
+  const idx = Math.max(0, order.indexOf(id));
+  const next = order[(idx + (direction || 1) + order.length) % order.length];
+  const p = periodById(next);
+  if (!p) return;
+  saveSettings({ autoScene: false, sceneId: next });
+  mode = 'manual';
+  stopRaf();
+  showPeriodManual(p, false);
+  emit('scene', { auto: false, id: next });
+}
+
+function setScene(id) {
+  const p = periodById(id);
+  if (!p) return;
+  saveSettings({ autoScene: false, sceneId: id });
+  mode = 'manual';
+  stopRaf();
+  showPeriodManual(p, false);
+  emit('scene', { auto: false, id: id });
+}
+
+/* ── Visibility / sleep ─────────────────────────────────────────────────── */
+
+document.addEventListener('visibilitychange', function () {
+  if (document.hidden) {
+    stopRaf();
+    particlesRunning = false;
+  } else if (SETTINGS.playback) {
+    if (mode === 'auto') startRaf();
+    if (SETTINGS.particles && SETTINGS.motion) startParticles();
+    updateHUD();
+    applySavedAppearance();
+  }
+});
+
+window.addEventListener('resize', function () {
+  refreshDepth();
+  layoutForegroundBoth();
+});
+
+function layoutForegroundBoth() {
+  if (fgA && fgPeriods.a) layoutForeground(fgA, fgPeriods.a, layerA);
+  if (fgB && fgPeriods.b) layoutForeground(fgB, fgPeriods.b, layerB);
+}
+
+/* ── Exit ───────────────────────────────────────────────────────────────── */
+
+function exitApp() {
+  // Native hosts close their own window; a browser tab cannot be closed unless
+  // it was opened by script, so say so instead of pretending it worked.
+  if (PLATFORM.tauri && window.__TAURI__ && window.__TAURI__.window) {
+    try { window.__TAURI__.window.getCurrent().close(); return; } catch (e) { /* fall through */ }
+  }
+  if (postToHost('quit')) return;
+  window.close();
+  setTimeout(function () {
+    emit('exit-blocked', null);
+  }, 120);
+}
+
+/* ── Public API consumed by app.js ──────────────────────────────────────── */
+
+window.ND = {
+  platform: PLATFORM,
+  periods: PERIODS,
+  settings: SETTINGS,
+  defaults: DEFAULT_SETTINGS,
+  on: on,
+  emit: emit,
+  save: saveSettings,
+  reset: resetSettings,
+  state: function () {
+    return {
+      sceneId: currentId || layerAId || SETTINGS.sceneId,
+      auto: mode === 'auto',
+      playing: SETTINGS.playback,
+      headlights: headlightOverride,
+      clock24: SETTINGS.clock24,
+      hasRidges: !!RIDGES
+    };
+  },
+  setScene: setScene,
+  stepScene: stepScene,
+  setAutoScene: setAutoScene,
+  setHeadlights: setHeadlights,
+  setPlayback: setPlayback,
+  setVolume: setVolume,
+  setMuted: setMuted,
+  applyAudioSettings: applyAudioSettings,
+  applyClockSettings: applyClockSettings,
+  applyBrightness: applyBrightness,
+  placeClock: placeClock,
+  setCar: setCar,
+  setBackground: setBackground,
+  setDesign: setDesign,
+  startEngine: startEngine,
+  exit: exitApp,
+  openSystemSettings: openSystemSettings,
+  postToHost: postToHost,
+  hostActive: function () { return nativeHostActive; },
+  reducedMotion: REDUCED_MOTION,
+  notify: function (msg) { emit('toast', msg); }
+};
+
+// Start the ridge request first so it overlaps the plate decode, then boot.
+// Both are deferred to the end of the file so every binding above exists.
+loadRidges();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot, { once: true });
+} else {
+  boot();
+}
