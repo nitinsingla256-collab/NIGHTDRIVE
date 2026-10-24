@@ -1,5 +1,57 @@
 # Changelog
 
+## [1.7.0] — 2026-10-24
+
+Functional phase: the clock gained the depth effect, the controls became real,
+and the wallpaper can carry your own car, background or complete design.
+
+### Added
+- **Depth clock.** The skyline of every plate is measured at build time
+  (`scripts/build-ridges.py` → `assets/ridges.json`) and the same plate is
+  painted back over the clock below that line, so the mountain cuts across the
+  type exactly where the photograph's ridge is. Placement is per scene, not one
+  hard-coded coordinate. 24-hour by default, updates every second, and falls
+  back to an unoccluded clock if the ridge data is missing.
+- **Edge drawer.** A 14 px strip on the left opens a frosted panel on hover,
+  focus, click or Ctrl/Cmd+B; it closes after a short grace period so it cannot
+  flicker, and can be pinned open. Keyboard reachable, Escape closes.
+- **Icon system.** One 24 px grid, 1.5 px stroke, drawn as `<use>` symbols on
+  `currentColor`, with hover/pressed/disabled/focus-visible states.
+- **Wallpaper Settings panel** — appearance and clock, cars and backgrounds,
+  custom wallpaper, drawer and icons, sound and startup, lighting and
+  transitions, performance and motion, reset.
+- **Custom car and background.** Import JPEG/PNG/WebP; a transparent PNG or
+  WebP keeps its own background out of the scene, an ordinary photograph is
+  placed as-is and says so. Scale, position, fit and brightness are adjustable.
+- **Complete Image mode.** Import a finished wallpaper and use it whole: no
+  second car, no duplicated clock, no forced split into layers.
+- **Persistence.** Preferences in localStorage, imported images in IndexedDB,
+  with a memory fallback and an explicit warning when storage is blocked.
+  Restore defaults clears both.
+
+### Fixed
+- **The startup sequence no longer replays on every refresh.** It was called
+  unconditionally at boot, and a document-wide click listener played the audio
+  again later. Booting now consults a saved preference that defaults to
+  `manual`; a deliberate Start engine action is the only thing that plays it.
+- **Controls that silently did nothing.** Wi-Fi/Bluetooth/volume buttons posted
+  messages and reported success even when no host was listening. They now check
+  whether a host answered, and say in the panel when a control needs one.
+- **Volume and mute reach the Windows mixer** through the host's existing
+  endpoint API instead of being decorative.
+- **Playback pause** stops the blend and particle loops without stopping the
+  clock, and the loops stop when the window is hidden.
+- The permanent side toolbars are gone; every control lives in the drawer.
+
+### Changed
+- Cache `nightdrive-v1.7.0`; `app.js` and `assets/ridges.json` are pre-cached.
+
+### Not done (deliberately)
+- System brightness, Wi-Fi and Bluetooth toggling are not possible from a web
+  engine; the controls report that instead of faking a switch.
+- The native hosts changed only where behaviour required it (quit, mixer), and
+  were **not compiled here** — no .NET or Swift toolchain in this environment.
+
 ## [1.6.0] — 2026-10-24
 
 Third visual pass: the image pipeline is now measurable, and the car is a
