@@ -110,11 +110,12 @@
   </div>
 
   <!-- ══ DRAWER ══
-       A 14 px edge strip on the left. Hovering or focusing it slides the
-       panel out; leaving closes it again after a short grace period so it
-       cannot flicker. Pin keeps it open. -->
-  <button type="button" id="drawer-trigger" class="drawer-trigger" aria-label="Open controls" aria-expanded="false" aria-controls="drawer"></button>
-  <div id="drawer-rail" class="drawer-rail" aria-hidden="true"></div>
+       The native Windows host keeps the wallpaper behind the desktop icon
+       layer at rest, so Ctrl+Alt+N and the tray menu are always available. In
+       an interactive web view, hovering or focusing the edge handle slides
+       the panel out; leaving closes it after a short grace period. -->
+  <button type="button" id="drawer-trigger" class="drawer-trigger" aria-label="Open controls (Ctrl+Alt+N or tray menu)" title="Open controls — Ctrl+Alt+N or the NIGHTDRIVE tray menu" aria-expanded="false" aria-controls="drawer"></button>
+  <div id="drawer-rail" class="drawer-rail" aria-hidden="true"><span class="drawer-handle"></span></div>
 
   <aside id="drawer" class="drawer" aria-label="Quick controls" aria-hidden="true">
     <header class="drawer-head">

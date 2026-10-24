@@ -6,45 +6,96 @@ using WpfApp = System.Windows.Application;
 namespace NightdriveHost;
 
 /// <summary>
-/// Minimal system-tray icon.
-/// Right-click → "Exit NIGHTDRIVE" to close the app.
+/// System-tray entry point for a wallpaper window that is normally hidden
+/// behind Explorer's desktop icons.
 /// </summary>
 public class TrayIconHelper : IDisposable
 {
     private NotifyIcon? _icon;
+    private ContextMenuStrip? _menu;
+
+    public Action? OpenSettingsRequested { get; set; }
+    public Action<string>? OnLogTime { get; set; }
 
     public void Show()
     {
-        _icon = new NotifyIcon
+        try
         {
-            Text    = "NIGHTDRIVE Wallpaper",
-            Visible = true,
-            Icon    = CreateIcon()
-        };
+            _icon = new NotifyIcon
+            {
+                Text = "NIGHTDRIVE Wallpaper",
+                Visible = true,
+                Icon = CreateIcon()
+            };
 
-        var menu = new ContextMenuStrip();
+            _menu = new ContextMenuStrip();
+            var titleItem = new ToolStripMenuItem("NIGHTDRIVE") { Enabled = false };
 
-        var titleItem = new ToolStripMenuItem("NIGHTDRIVE") { Enabled = false };
-        
-        var startupItem = new ToolStripMenuItem("Start with Windows");
-        startupItem.CheckOnClick = true;
-        startupItem.Checked = IsStartupEnabled();
-        startupItem.CheckedChanged += (_, _) => SetStartup(startupItem.Checked);
+            var settingsItem = new ToolStripMenuItem("Open settings");
+            settingsItem.Click += OnOpenSettingsClick;
 
-        var exitItem  = new ToolStripMenuItem("Exit NIGHTDRIVE");
-        exitItem.Click += (_, _) =>
+            var startupItem = new ToolStripMenuItem("Start with Windows")
+            {
+                CheckOnClick = true,
+                Checked = IsStartupEnabled()
+            };
+            startupItem.CheckedChanged += OnStartupChanged;
+
+            var exitItem = new ToolStripMenuItem("Exit NIGHTDRIVE");
+            exitItem.Click += OnExitClick;
+
+            _menu.Items.Add(titleItem);
+            _menu.Items.Add(new ToolStripSeparator());
+            _menu.Items.Add(settingsItem);
+            _menu.Items.Add(startupItem);
+            _menu.Items.Add(new ToolStripSeparator());
+            _menu.Items.Add(exitItem);
+            _icon.ContextMenuStrip = _menu;
+            Log("tray icon ready");
+        }
+        catch (Exception ex)
         {
-            _icon!.Visible = false;
+            Log($"tray setup exception: {ex}");
+        }
+    }
+
+    private void OnOpenSettingsClick(object? sender, EventArgs e)
+    {
+        try
+        {
+            Log("tray requested open settings");
+            OpenSettingsRequested?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            Log($"tray open settings exception: {ex}");
+        }
+    }
+
+    private void OnStartupChanged(object? sender, EventArgs e)
+    {
+        try
+        {
+            if (sender is ToolStripMenuItem item) SetStartup(item.Checked);
+        }
+        catch (Exception ex)
+        {
+            Log($"tray startup toggle exception: {ex}");
+        }
+    }
+
+    private void OnExitClick(object? sender, EventArgs e)
+    {
+        try
+        {
+            Log("tray requested exit");
+            if (_icon != null) _icon.Visible = false;
             WpfApp.Current.Shutdown();
-        };
-
-        menu.Items.Add(titleItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(startupItem);
-        menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add(exitItem);
-
-        _icon.ContextMenuStrip = menu;
+        }
+        catch (Exception ex)
+        {
+            Log($"tray exit exception: {ex}");
+        }
     }
 
     private const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -63,12 +114,16 @@ public class TrayIconHelper : IDisposable
         }
     }
 
-    private static void SetStartup(bool enable)
+    private void SetStartup(bool enable)
     {
         try
         {
             using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(RunKey, true);
-            if (key == null) return;
+            if (key == null)
+            {
+                Log("startup toggle skipped: Run registry key unavailable");
+                return;
+            }
 
             if (enable)
             {
@@ -79,30 +134,27 @@ public class TrayIconHelper : IDisposable
             {
                 key.DeleteValue(AppName, false);
             }
+            Log($"start with Windows={(enable ? "on" : "off")}");
         }
         catch (Exception ex)
         {
-            System.Diagnostics.Debug.WriteLine($"Failed to set startup: {ex.Message}");
+            Log($"startup registry exception: {ex}");
         }
     }
 
     /// <summary>
-    /// Creates a simple programmatic car silhouette icon (16×16).
-    /// Avoids requiring an external .ico file.
+    /// Creates a small programmatic car silhouette icon, avoiding another
+    /// packaged asset and keeping the tray entry available in a published build.
     /// </summary>
     private static Icon CreateIcon()
     {
         using var bmp = new Bitmap(16, 16);
-        using var g   = Graphics.FromImage(bmp);
-        g.Clear(Color.FromArgb(0, 0, 0));           // black background
+        using var g = Graphics.FromImage(bmp);
+        g.Clear(Color.FromArgb(0, 0, 0));
 
-        // Simple car silhouette in accent gold
         using var brush = new SolidBrush(Color.FromArgb(196, 154, 74));
-        // body
         g.FillRectangle(brush, 1, 9, 14, 4);
-        // roof
         g.FillRectangle(brush, 4, 5, 8, 5);
-        // wheels
         g.FillEllipse(Brushes.White, 1, 11, 4, 4);
         g.FillEllipse(Brushes.White, 11, 11, 4, 4);
 
@@ -112,6 +164,23 @@ public class TrayIconHelper : IDisposable
 
     public void Dispose()
     {
-        _icon?.Dispose();
+        try
+        {
+            if (_icon != null) _icon.Visible = false;
+            _icon?.Dispose();
+            _menu?.Dispose();
+            _icon = null;
+            _menu = null;
+        }
+        catch (Exception ex)
+        {
+            Log($"tray dispose exception: {ex}");
+        }
+    }
+
+    private void Log(string message)
+    {
+        try { OnLogTime?.Invoke("[Tray] " + message); }
+        catch { /* logging must never take down the host */ }
     }
 }

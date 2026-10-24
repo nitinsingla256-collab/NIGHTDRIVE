@@ -1237,7 +1237,7 @@ html, body {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 14px;
+  width: 18px;
   z-index: 60;
   border: 0;
   padding: 0;
@@ -1245,25 +1245,52 @@ html, body {
   cursor: pointer;
 }
 
-/* A whisper of a hint that something lives at the edge. */
+/* A quiet, permanent affordance. The rail remains visible even when the
+   pointer trigger is disabled because Ctrl+Alt+N and the tray menu are the
+   native entry points on the Windows desktop host. */
 .drawer-rail {
   position: fixed;
   left: 0;
   top: 50%;
-  width: 3px;
-  height: 76px;
+  width: 2px;
+  height: 92px;
   transform: translateY(-50%);
   border-radius: 0 3px 3px 0;
-  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.42), transparent);
   z-index: 59;
   pointer-events: none;
-  opacity: 0.5;
-  transition: opacity 0.3s ease, width 0.3s ease;
+  opacity: 0.35;
+  transition: opacity 0.22s ease;
 }
 
-body.drawer-enabled .drawer-rail { opacity: 0.55; }
-body:not(.drawer-enabled) .drawer-trigger,
-body:not(.drawer-enabled) .drawer-rail { display: none; }
+.drawer-handle {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  transform: translate(-1px, -50%);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.48);
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.14);
+  transition: background 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
+}
+
+.drawer-trigger:hover ~ .drawer-rail,
+.drawer-trigger:focus-visible ~ .drawer-rail {
+  opacity: 0.92;
+}
+
+.drawer-trigger:hover ~ .drawer-rail .drawer-handle,
+.drawer-trigger:focus-visible ~ .drawer-rail .drawer-handle {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 0 16px rgba(255, 255, 255, 0.42);
+  transform: translate(0, -50%);
+}
+
+/* `drawerEnabled` controls hover/mouse activation in app.js. It must not
+   remove the visual rail: the hotkey and tray entry point still exist. */
+body.drawer-enabled .drawer-rail { opacity: 0.35; }
 
 .drawer {
   position: fixed;

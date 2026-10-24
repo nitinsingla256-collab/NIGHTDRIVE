@@ -137,3 +137,39 @@ frame time on a real desktop.
 npm test                          # 167 checks, all passing
 python3 scripts/build-ridges.py --preview   # offline clock composites
 ```
+
+## 9. Windows host changes on this branch — not executed here
+
+This branch now contains the first five native-host patches; the Linux
+container still cannot build or launch them:
+
+- **P1:** `DesktopInteraction` registers `Ctrl+Alt+N`, raises the WPF HWND as
+  a temporary top-level window for drawer input, posts `drawer:open`, and sinks
+  it back into WorkerW on `drawer:closed`. The tray menu has an **Open
+  settings** entry using the same route.
+- **P2:** the edge affordance is permanent: a two-pixel rail and ten-pixel
+  handle remain visible even when pointer activation is disabled. The hotkey
+  and tray entry are the non-pointer routes for a WorkerW-backed window.
+- **P3:** the Windows project copies the complete `engine/` tree to both build
+  and publish output, and startup refuses a package missing `app.js`, `sw.js`
+  or `assets/ridges.json`.
+- **P4:** WebView2 navigation, DOM-ready and process-failure handlers are
+  registered before `Navigate`; navigation success/error status is logged.
+- **P5:** startup diagnostics now go to `Desktop/NIGHTDRIVE_STARTUP.log` and
+  include the WebRoot, HWND/parent/visibility/rectangle state, WorkerW search,
+  every `SetParent` result and Win32 error, WebView2 lifecycle events, and each
+  page-to-host drawbridge action. The missing `assets/dusk/sky.jpg` fallback
+  reference was also replaced with the shipped dusk plate.
+
+The implementation has not been called a Windows build or runtime test in
+this environment. On Windows, use:
+
+```powershell
+dotnet publish hosts\windows\NightdriveHost\NightdriveHost.csproj `
+  -c Release -r win-x64 --self-contained false
+& .\hosts\windows\NightdriveHost\bin\Release\net8.0-windows10.0.19041.0\win-x64\publish\NightdriveHost.exe
+Get-Content "$env:USERPROFILE\Desktop\NIGHTDRIVE_STARTUP.log" -Tail 80
+```
+
+The visual clock and moon changes from the earlier P6/P7 proposal remain
+intentionally untouched pending that interaction check.

@@ -102,13 +102,30 @@ if (existsSync(csprojPath)) {
   const csproj = readFileSync(csprojPath, 'utf8');
   check(/net8\.0-windows/.test(csproj), 'targets net8.0-windows');
   check(/Microsoft\.Web\.WebView2/.test(csproj), 'references Microsoft.Web.WebView2');
+  check(csproj.includes('engine') && csproj.includes('RecursiveDir') && /CopyToPublishDirectory="PreserveNewest"/.test(csproj),
+    'published host copies the complete engine directory');
   for (const f of ['App.xaml', 'App.xaml.cs', 'MainWindow.xaml', 'MainWindow.xaml.cs',
-                   'BatteryHelper.cs', 'ConnectivityHelper.cs', 'TrayIconHelper.cs',
-                   'WallpaperHelper.cs', 'app.manifest']) {
+                   'BatteryHelper.cs', 'ConnectivityHelper.cs', 'DesktopInteraction.cs',
+                   'TrayIconHelper.cs', 'WallpaperHelper.cs', 'app.manifest']) {
     check(existsSync(join(win, f)), f);
   }
   const mw = readFileSync(join(win, 'MainWindow.xaml.cs'), 'utf8');
+  const desktopInteraction = readFileSync(join(win, 'DesktopInteraction.cs'), 'utf8');
+  const connectivity = readFileSync(join(win, 'ConnectivityHelper.cs'), 'utf8');
   check(/engine/.test(mw) && /index\.html/.test(mw), 'host loads engine/index.html');
+  check(/RegisterHotKey/.test(desktopInteraction) && /HWND_TOPMOST/.test(desktopInteraction) &&
+        /RememberDesktopParent/.test(desktopInteraction),
+    'desktop interaction has a hotkey, raise and sink path');
+  check(/drawer:open/.test(mw) && /drawer:closed/.test(mw) && /PostDrawerMessage/.test(mw),
+    'host bridges drawer open and close messages');
+  check(/ProcessFailed/.test(mw) && /NavigationCompleted/.test(mw) && /WebErrorStatus/.test(mw),
+    'WebView2 navigation and process diagnostics are wired');
+  const domSubscription = mw.indexOf('DOMContentLoaded += OnDomContentLoaded');
+  const navigateCall = mw.indexOf('CoreWebView2.Navigate');
+  check(domSubscription >= 0 && navigateCall > domSubscription,
+    'DOMContentLoaded subscription precedes Navigate');
+  check(/drawbridge message/.test(connectivity) && /TryGetWebMessageAsString/.test(connectivity),
+    'native bridge logs and parses page messages');
 }
 
 console.log('Scene image quality');

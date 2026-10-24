@@ -19,6 +19,14 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2365.46" />
+
+    <!-- Publish the complete shared engine beside the host executable. A
+         published WPF binary is otherwise missing app.js, sw.js and the
+         measured ridge data even though the repo checkout works. -->
+    <Content Include="..\..\..\engine\**\*"
+             Link="engine\%(RecursiveDir)%(Filename)%(Extension)"
+             CopyToOutputDirectory="PreserveNewest"
+             CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
