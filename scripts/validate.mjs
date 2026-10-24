@@ -368,12 +368,42 @@ try {
     for (const e of report.errors) console.error('      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      '));
   }
   // 24-hour by default: two digits, a colon, two digits, no AM/PM suffix.
-  check(/^\d{2}:\d{2}$/.test(report.hudText || ''),
-    `clock renders 24-hour by default (${report.hudText || 'empty'})`);
+  check(/^\d{2}:\d{2}$/.test(report.hudAtBoot || ''),
+    `clock renders 24-hour by default (${report.hudAtBoot || 'empty'})`);
   check(/\b\d{4}\b/.test(report.hudDate || ''), 'date renders');
   check((report.sceneSrcs || []).length > 0 && report.sceneSrcs.every((s) => s.endsWith('.jpg')),
     `scene images resolved from disk (${(report.sceneSrcs || []).join(', ') || 'none'})`);
   check((report.framesRun || 0) > 0, 'animation loop runs');
+
+  // ── Behaviour, executed ────────────────────────────────────────────────────
+  // A screenshot cannot show a 90 ms open delay, a 380 ms close grace period,
+  // pinning, or whether a page load makes a noise. These run the real handlers
+  // against the same stub, in a clean boot with no controls clicked first.
+  const behaviourRun = await runEngineSmoke({ behaviour: true });
+  const b = behaviourRun.behaviours || {};
+  check(b.closedAtBoot === true, 'drawer starts closed');
+  check(b.noInstantOpen === true && b.opensOnApproach === true,
+    'drawer opens on approach, after its delay rather than instantly');
+  check(b.noInstantClose === true && b.closesAfterGrace === true,
+    'drawer closes after the grace period, not the moment the pointer leaves');
+  check(b.pinnedStaysOpen === true && b.escapeCloses === true,
+    'pin holds the drawer open; Escape closes it');
+  check(b.keyboardOpens === true && b.keyboardCloses === true,
+    'Ctrl/Cmd+B opens and closes the drawer without a mouse');
+  check(b.rejectsWrongType === true && b.rejectsLargeFile === true,
+    'wrong file types and oversized images are refused with a reason');
+
+  // Startup: a reload must be silent; only an explicit start may make a sound.
+  check(b.silentOnLoad === true, 'no startup sound while the wallpaper loads');
+  check(b.soundOnManualStart === true, 'a deliberate Start engine still plays it');
+  const reload = await runEngineSmoke({ storage: behaviourRun.storage });
+  check(reload.ok, 'a reload with saved settings boots without errors');
+  check(reload.audio.playCalls === 0, 'no startup sound on an ordinary reload');
+  check(!!reload.settings && typeof reload.settings.clock24 === 'boolean' &&
+    reload.settings.clock24 === behaviourRun.settings.clock24,
+    'settings saved in one session are restored in the next');
+  const quota = await runEngineSmoke({ storageThrows: true });
+  check(quota.ok, 'a blocked or full localStorage does not stop the wallpaper');
 
   // ── Interface layer, executed ──────────────────────────────────────────────
   const ui = report.ui || {};

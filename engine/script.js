@@ -607,12 +607,17 @@ const btBtn = document.getElementById('bt-btn');
 const wifiStatus = document.getElementById('wifi-status');
 const btStatus = document.getElementById('bt-status');
 
+/**
+ * `navigator.onLine` says whether there is a network route, not whether the
+ * Wi-Fi radio is up — on Ethernet it is true with the radio off. The chip is
+ * labelled accordingly instead of claiming a radio state nobody can read.
+ */
 function setWifiState(online) {
   if (!wifiBtn || !wifiStatus) return;
   if (online) {
     wifiBtn.classList.add('is-on');
     wifiBtn.classList.remove('is-off');
-    wifiStatus.textContent = 'Connected';
+    wifiStatus.textContent = 'Online';
   } else {
     wifiBtn.classList.add('is-off');
     wifiBtn.classList.remove('is-on');
@@ -632,7 +637,8 @@ function setBtState(enabled) {
     btStatus.textContent = 'Off';
   } else {
     btBtn.classList.remove('is-on', 'is-off');
-    btStatus.textContent = '--';
+    // No host has told us anything, so say so rather than guess.
+    btStatus.textContent = 'n/a';
   }
 }
 
