@@ -259,6 +259,28 @@ function runBehaviours(context, recordError, helpers) {
   out.rejectsWrongType = /Unsupported/i.test(out.wrongTypeMessage || '');
   out.rejectsLargeFile = /MB/.test(out.tooLargeMessage || '');
 
+  // Schedule editing & validation (reject duplicate start minutes, accept valid schedule).
+  const origSched = ND.getSchedule();
+  out.scheduleHasSixPeriods = origSched.periods.length === 6;
+  const dupeOk = ND.saveScheduleHours({ morning: 300, day: 300, goldenHour: 960, dusk: 1110, night: 1200, midnight: 0 });
+  const validOk = ND.saveScheduleHours({ morning: 330, day: 540, goldenHour: 990, dusk: 1110, night: 1230, midnight: 0 });
+  out.scheduleRejectsDuplicate = dupeOk === false;
+  out.scheduleAcceptsValid = validOk === true && ND.getSchedule().periods.find((p) => p.id === 'morning').startHHMM === '05:30';
+  ND.resetScheduleHours();
+
+  // Car Studio coherent compositing: picking a transparent car on integrated Cascade Overlook
+  // switches to Scenic Touring car-free pack so two vehicles never stack.
+  ND.useWallpaperPack('cascade-overlook');
+  ND.selectStudioCar('obsidian-muscle');
+  out.carAutoSwitchesToScenicPack = ND.state().activePack === 'scenic-touring' && !!ND.state().activeCar;
+  ND.useWallpaperPack('cascade-overlook');
+  out.integratedPackClearsCarOverlay = ND.state().activeCar === null;
+
+  // Media truthfulness: idle at boot, connected only after a real source loads.
+  out.mediaIdleAtBoot = ND.mediaState().connected === false;
+  ND.loadLocalAudio('blob:test-track', { title: 'Midnight Drive', artist: 'Test Artist' });
+  out.mediaConnectsLocalAudio = ND.mediaState().connected === true && ND.mediaState().title === 'Midnight Drive';
+
   return out;
 }
 
@@ -334,6 +356,15 @@ export async function runEngineSmoke({
   audioEl.pause = function () { audioEl.pauseCalls++; };
   byId.set('engine-audio', audioEl);
 
+  const musicEl = makeElement('audio');
+  musicEl.paused = true;
+  musicEl.ended = false;
+  musicEl.currentTime = 0;
+  musicEl.duration = 210;
+  musicEl.play = function () { musicEl.paused = false; musicEl.dispatch('play'); return Promise.resolve(); };
+  musicEl.pause = function () { musicEl.paused = true; musicEl.dispatch('pause'); };
+  byId.set('music-audio', musicEl);
+
   const selectorCache = new Map();
   const documentTitle = makeElement('title');
   const documentListeners = new Map();
@@ -399,7 +430,20 @@ export async function runEngineSmoke({
     constructor() { this.status = 404; this.responseText = ''; this.timeout = 0; this._src = ''; }
     open(_m, url) { this._src = url; }
     send() {
-      this.status = isAvailable(this._src) ? 200 : 404;
+      const cleanRel = String(this._src || '').replace(/^\.\//, '').replace(/\?.*$/, '');
+      const diskPath = join(root, 'engine', cleanRel);
+      const okAvail = isAvailable(this._src);
+      if (okAvail) {
+        try {
+          this.responseText = readFileSync(diskPath, 'utf8');
+          this.status = 200;
+        } catch {
+          this.status = 200;
+          this.responseText = '';
+        }
+      } else {
+        this.status = 404;
+      }
       setImmediate(() => { if (this.onload) this.onload(); });
     }
     addEventListener() {}

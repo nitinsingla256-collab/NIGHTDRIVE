@@ -1,31 +1,9 @@
 /**
- * NIGHTDRIVE — Phase 3
- * Reads the computer's local clock. No APIs, no frameworks, no build step.
- *
- * New in Phase 3:
- *  - Live HUD clock, date, weekday (updated every second via setInterval).
- *  - Battery widget — Battery Status API with honest fallback.
- *  - Gradual environment transitions:
- *      Each period has a configurable overlap window with its neighbour.
- *      A requestAnimationFrame loop continuously computes the blend ratio
- *      and sets layer opacities directly, so the change is always smooth
- *      and proportional to the actual wall-clock time.
- *      Headlight opacity also fades in/out across the dusk boundary.
- *  - Colour-temperature overlay: warms/cools the overall scene per-period.
- *
- * Architecture:
- *  - layerA / layerB always hold the two adjacent scene images.
- *  - The rAF loop sets their opacities to (1-t) and t where t ∈ [0,1].
- *  - When the blend completes (t ≥ 1.0) we "commit" and swap the buffers.
- *  - Manual mode bypasses the rAF loop and uses a plain CSS crossfade.
+ * NIGHTDRIVE — Shared Wallpaper Engine (v3.0)
+ * Zero external runtime dependencies. Runs identically in Windows WebView2
+ * (NightdriveHost), macOS WKWebView, Linux Qt WebEngine, Tauri, and browsers.
  */
 
-/**
- * Startup tracing for the native hosts. PLATFORM is declared further down
- * with `const`, so this function must only ever be *called* after that
- * declaration has been evaluated (TDZ — calling it earlier used to throw a
- * fatal ReferenceError and stop the whole engine from booting).
- */
 function logToHost(step) {
   const msg = JSON.stringify({ action: 'log_time:' + step });
   if (typeof PLATFORM === 'undefined') return;
@@ -41,11 +19,9 @@ window.addEventListener('error', function (e) {
   logToHost('error: ' + e.message);
 });
 
-/* ══════════════════════════════════════════════
-   PLATFORM DETECTION & HOST BRIDGE
-   Works in: plain browsers (desktop/mobile), Windows WebView2 host,
-   macOS WKWebView host, Linux Qt host, Tauri.
-   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   1. PLATFORM DETECTION & NATIVE HOST BRIDGE
+   ══════════════════════════════════════════════════════════════════════════ */
 
 const PLATFORM = (function () {
   const ua = navigator.userAgent || '';
@@ -58,29 +34,22 @@ const PLATFORM = (function () {
     android: /Android/i.test(ua),
     linux: /Linux/i.test(p) && !/Android/i.test(ua),
     tauri: !!window.__TAURI__,
-    // Native NightdriveHost (WebView2). Tauri on Windows also uses WebView2, so exclude it.
     webview2: !!(window.chrome && window.chrome.webview) && !window.__TAURI__,
     wkhost: !!(window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.nightdrive),
     touch: ('ontouchstart' in window) || navigator.maxTouchPoints > 0
   };
 })();
 
-// Safe to trace now that PLATFORM exists.
-logToHost("5. HTML engine loading (script.js executing)");
+logToHost('5. HTML engine loading (script.js executing)');
 document.documentElement.classList.toggle('is-touch', PLATFORM.touch);
 
 const REDUCED_MOTION = window.matchMedia
   ? window.matchMedia('(prefers-reduced-motion: reduce)')
   : { matches: false };
 
-/** Send an action to whichever native host is embedding us. Returns true if handled. */
-// Set to true once a native host actually talks to us (WebView2 is also used
-// by generic wallpaper apps such as Lively, which don't answer messages).
 let nativeHostActive = false;
-// The native hotkey can arrive while the document is still loading. Keep the
-// request in a tiny page-level latch so app.js can consume it after its own
-// DOM-ready binding is installed.
 window.__nightdriveDrawerOpen = false;
+
 if (PLATFORM.webview2) {
   window.chrome.webview.addEventListener('message', function (event) {
     try {
@@ -91,10 +60,10 @@ if (PLATFORM.webview2) {
       if (data && data.action === 'drawer:open') {
         window.__nightdriveDrawerOpen = true;
         if (typeof window.Event === 'function') window.dispatchEvent(new Event('nightdrive-drawer-open'));
+      } else if (data && data.action === 'drawer:close') {
+        if (typeof window.Event === 'function') window.dispatchEvent(new Event('nightdrive-drawer-close'));
       }
     } catch (e) {
-      // A connectivity or battery message is allowed to be handled by its
-      // specialised listener below; it is not a drawer request.
       nativeHostActive = true;
     }
   });
@@ -107,142 +76,127 @@ function postToHost(action) {
   return false;
 }
 
-/**
- * Open the OS settings page for a control (wifi | bt | sound | focus).
- * Native hosts handle it; in a plain browser we only try URL schemes
- * the current OS actually understands, otherwise do nothing.
- */
 const SETTINGS_URLS = {
-  windows: { wifi: 'ms-settings:network-wifi', bt: 'ms-settings:bluetooth', sound: 'ms-settings:sound', focus: 'ms-settings:quiethours' }
+  windows: {
+    wifi: 'ms-settings:network-wifi',
+    network: 'ms-settings:network',
+    bt: 'ms-settings:bluetooth',
+    sound: 'ms-settings:sound',
+    focus: 'ms-settings:quiethours',
+    display: 'ms-settings:display'
+  },
+  mac: {
+    wifi: 'x-apple.systempreferences:com.apple.preference.network',
+    network: 'x-apple.systempreferences:com.apple.preference.network',
+    bt: 'x-apple.systempreferences:com.apple.preferences.Bluetooth',
+    sound: 'x-apple.systempreferences:com.apple.preference.sound',
+    focus: 'x-apple.systempreferences:com.apple.preference.notifications',
+    display: 'x-apple.systempreferences:com.apple.preference.displays'
+  }
 };
-SETTINGS_URLS.mac = {
-  wifi: 'x-apple.systempreferences:com.apple.preference.network',
-  bt: 'x-apple.systempreferences:com.apple.preferences.Bluetooth',
-  sound: 'x-apple.systempreferences:com.apple.preference.sound',
-  focus: 'x-apple.systempreferences:com.apple.preference.notifications'
-};
+
 function openSystemSettings(kind) {
-  if (postToHost('open_' + kind + '_settings')) return;
+  if (postToHost('open_' + kind + '_settings')) return true;
   const table = PLATFORM.windows ? SETTINGS_URLS.windows : (PLATFORM.mac ? SETTINGS_URLS.mac : null);
   if (PLATFORM.tauri && table && table[kind] && window.__TAURI__.shell) {
-    window.__TAURI__.shell.open(table[kind]).catch(() => {});
-    return;
+    window.__TAURI__.shell.open(table[kind]).catch(function () {});
+    return true;
   }
   if (PLATFORM.windows && SETTINGS_URLS.windows[kind]) {
     const a = document.createElement('a');
     a.href = SETTINGS_URLS.windows[kind];
     a.rel = 'noopener';
     a.click();
+    return true;
   }
+  return false;
 }
 
-/* ══════════════════════════════════════════════
-   CONFIGURATION
-   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   2. PERIOD DEFINITIONS & DEFAULT ASSET TABLE
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/**
- * PERIODS — time brackets in minutes from midnight.
- * Night wraps past 00:00 (start > end).
- *
- * transitionMins: how many minutes BEFORE the period's START boundary
- *   the blend begins.  During this window the previous scene fades out
- *   and this scene fades in linearly.
- *   e.g. dusk.start = 18:30, dusk.transitionMins = 30
- *     → blend begins at 18:00, complete at 18:30.
- */
 const PERIODS = [
   {
     id: 'morning',
     label: 'Morning',
+    defaultStart: 5 * 60,
     start: 5 * 60,
     end: 9 * 60,
-    transitionMins: 20,    // blend starts 20 min before 05:00
+    transitionMins: 20,
     headlights: false,
-    hlFade: false,         // headlights fade in this period?  No.
-    accent: '#a8c4d0',
-    accentDim: '#4a7080',
-    ctColor: 'rgba(150,190,235,0.00)',  // colour-temperature tint (soft-light)
+    hlFade: false,
+    accent: '#98c1e8',
+    accentDim: '#466a88',
+    ctColor: 'rgba(150,190,235,0.00)'
   },
   {
     id: 'day',
     label: 'Day',
+    defaultStart: 9 * 60,
     start: 9 * 60,
     end: 16 * 60,
     transitionMins: 20,
     headlights: false,
     hlFade: false,
-    accent: '#b8cce0',
-    accentDim: '#4a6880',
-    ctColor: 'rgba(255,252,244,0.00)',
+    accent: '#8cb8ec',
+    accentDim: '#436385',
+    ctColor: 'rgba(255,252,244,0.00)'
   },
   {
     id: 'goldenHour',
     label: 'Golden Hour',
+    defaultStart: 16 * 60,
     start: 16 * 60,
     end: 18 * 60 + 30,
     transitionMins: 20,
     headlights: false,
     hlFade: false,
-    accent: '#e8a040',
-    accentDim: '#8a5018',
-    ctColor: 'rgba(214,160,92,0.09)',   // warm amber tint (the plate is already warm)
+    accent: '#e8a44c',
+    accentDim: '#8a521b',
+    ctColor: 'rgba(214,160,92,0.07)'
   },
   {
     id: 'dusk',
     label: 'Dusk',
+    defaultStart: 18 * 60 + 30,
     start: 18 * 60 + 30,
     end: 20 * 60,
     transitionMins: 20,
     headlights: true,
-    hlFade: true,          // headlights fade IN during this period
-    accent: '#b87890',
-    accentDim: '#703050',
-    ctColor: 'rgba(118,92,146,0.14)',   // cool violet tint
+    hlFade: true,
+    accent: '#7da9ff',
+    accentDim: '#3f5d9c',
+    ctColor: 'rgba(92,108,162,0.08)'
   },
   {
     id: 'night',
     label: 'Night',
+    defaultStart: 20 * 60,
     start: 20 * 60,
     end: 24 * 60,
     transitionMins: 20,
     headlights: true,
     hlFade: false,
-    accent: '#c49a4a',
-    accentDim: '#7a5f28',
-    ctColor: 'rgba(74,104,158,0.16)',   // cool blue-night tint
+    accent: '#7da9ff',
+    accentDim: '#3b5894',
+    ctColor: 'rgba(64,96,154,0.08)'
   },
   {
     id: 'midnight',
     label: 'Midnight',
+    defaultStart: 0,
     start: 0,
     end: 5 * 60,
     transitionMins: 20,
     headlights: true,
     hlFade: false,
-    accent: '#708090',
-    accentDim: '#405060',
-    ctColor: 'rgba(44,62,104,0.18)',    // deeper blue-night tint
+    accent: '#6889cc',
+    accentDim: '#324875',
+    ctColor: 'rgba(38,58,104,0.10)'
   }
 ];
 
-/**
- * SCENE ASSETS — one entry per period, with the car/landscape decoupling that
- * a future customisation phase needs.
- *
- *   landscape  ordered candidate list for the wide plate (16:9-ish).
- *   portrait   optional tall version shown on portrait displays. When absent
- *              the engine falls back to `landscape` and presents it on its own
- *              blurred backdrop rather than stretching or blind-cropping it
- *              (see .scene-img--contain in styles.css).
- *   cursor     optional independent car layer (transparent PNG/WebP) drawn on
- *              top of the plate. Empty today: the car is part of the plate.
- *   focus      the car's position in the plate as a percentage pair. Used as
- *              object-position so portrait/narrow viewports crop toward the
- *              car instead of the middle of the valley.
- *
- * `scene` is kept as the resolved landscape list so existing hosts, the
- * service worker and the test suite keep working unchanged.
- */
 const SCENE_ASSETS = {
   morning: {
     landscape: ['assets/morning/scene.jpg', 'assets/morning/scene.png', 'assets/morning/scene.svg'],
@@ -288,11 +242,6 @@ const SCENE_ASSETS = {
   }
 };
 
-/**
- * ASSETS — the shape the rest of the engine consumes.
- * `scene` is the landscape list; `headlights` is unchanged. Derived rather
- * than duplicated so the two can never drift apart.
- */
 const ASSETS = Object.keys(SCENE_ASSETS).reduce(function (table, id) {
   const entry = SCENE_ASSETS[id];
   table[id] = {
@@ -305,39 +254,39 @@ const ASSETS = Object.keys(SCENE_ASSETS).reduce(function (table, id) {
   return table;
 }, {});
 
-const CLOCK_MS = 1000;   // HUD clock update interval
-const SCENE_MS = 15000;  // how often manual-mode re-checks in auto; also blend tick in auto
-const TRANSITION_MS = 1600;   // CSS manual crossfade duration (manual-mode only)
-const LABEL_SHOW_MS = 3200;   // how long the scene-label overlay stays visible
+const CLOCK_MS = 1000;
+const TRANSITION_MS = 1600;
+const LABEL_SHOW_MS = 2800;
+const HEADLIGHT_OPACITY = 0.76;
 
-/* ══════════════════════════════════════════════
-   STATE
-   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   3. RUNTIME STATE & DOM REFERENCES
+   ══════════════════════════════════════════════════════════════════════════ */
 
 let mode = 'auto';
-let currentId = null;      // the period shown in layerA (front buffer)
-let nextId = null;      // the period loading/blending into layerB (back buffer)
+let currentId = null;
 let frontIsA = true;
 let transitioning = false;
 let pendingId = null;
+let manualOriginScheduleId = null;
 
-// Continuous blend state (rAF)
-let blendRatio = 1.0;       // 1.0 = layerA fully visible, layerB hidden
 let rafHandle = null;
-let assetsCache = {};        // { periodId: { scene, headlights } }
-let assetsReady = {};        // { periodId: true } once loaded
-
+let assetsCache = {};
+let assetsReady = {};
 let layersOpacity = [-1, -1];
 let particleIntensity = 0;
+let layerAId = null;
+let layerBId = null;
+let lastAccentId = null;
+let lastHeadlightMix = -1;
 
 let clockTimer = null;
-let sceneTimer = null;
 let labelTimer = null;
-let batteryTimer = null;
 
-/* ══════════════════════════════════════════════
-   DOM REFERENCES
-   ══════════════════════════════════════════════ */
+let STUDIO_CATALOG = null;
+let studioWallpaperOverrides = {}; // { periodId: wallpaperObj }
+let activeSingleWallpaper = null;  // non-null when user applies a specific Studio wallpaper directly
+let activeStudioCar = null;        // car catalog entry when user picks a Car Studio overlay
 
 const layerA = document.querySelector('[data-layer="a"]');
 const layerB = document.querySelector('[data-layer="b"]');
@@ -346,39 +295,83 @@ const sceneLabelTxt = document.getElementById('scene-label-text');
 const ctOverlay = document.getElementById('ct-overlay');
 const root = document.documentElement;
 
-// HUD elements
 const hudDateEl = document.getElementById('hud-date');
 const hudTimeEl = document.getElementById('hud-time');
+const drawerClockVal = document.getElementById('drawer-clock-val');
+const drawerDateSub = document.getElementById('drawer-date-sub');
+const drawerPeriodBadge = document.getElementById('drawer-period-badge');
 
-// Battery elements
 const batteryWidget = document.getElementById('battery-widget');
 const batteryFill = document.getElementById('battery-fill');
 const batteryPctEl = document.getElementById('battery-pct');
+const drawerBatteryVal = document.getElementById('drawer-battery-val');
+const drawerBatterySub = document.getElementById('drawer-battery-sub');
 
-/* ══════════════════════════════════════════════
-   TIME HELPERS
-   ══════════════════════════════════════════════ */
+const telemetryState = {
+  batteryAvailable: false,
+  batteryPct: null,
+  batteryCharging: false,
+  weatherAvailable: false,
+  weatherTempC: null,
+  weatherCode: null,
+  weatherIsDay: 0,
+  weatherLabel: 'Locating…',
+  wifi: navigator.onLine,
+  bt: null
+};
+
+/* ══════════════════════════════════════════════════════════════════════════
+   4. TIME & EDITABLE SCHEDULE ENGINE
+   ══════════════════════════════════════════════════════════════════════════ */
 
 function minutesNow() {
   const d = new Date();
   return d.getHours() * 60 + d.getMinutes();
 }
 
-/** Wrap-aware minutes difference: how many minutes from `from` to `to` going forward. */
 function minutesForward(from, to) {
   return (to - from + 1440) % 1440;
 }
 
-/**
- * Determine which period `m` belongs to AND how far into it we are
- * (as a fraction 0→1 from the period start to end, ignoring the overlap window).
- */
+function formatMinutesHHMM(mins) {
+  const m = ((Math.round(mins) % 1440) + 1440) % 1440;
+  const hh = String(Math.floor(m / 60)).padStart(2, '0');
+  const mm = String(m % 60).padStart(2, '0');
+  return hh + ':' + mm;
+}
+
+function parseHHMMToMinutes(str) {
+  const match = String(str || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+}
+
+function recomputePeriodEnds(blendMins) {
+  // Sort a copy by start minute around the 24h ring to derive each period's
+  // exact end minute (the next period's start minute), so zero gaps or overlaps
+  // can ever exist even after custom user edits.
+  const ordered = PERIODS.slice().sort(function (a, b) { return a.start - b.start; });
+  for (let i = 0; i < ordered.length; i++) {
+    const cur = ordered[i];
+    const nxt = ordered[(i + 1) % ordered.length];
+    cur.end = nxt.start === 0 ? 1440 : nxt.start;
+    if (typeof blendMins === 'number' && blendMins >= 5 && blendMins <= 60) {
+      cur.transitionMins = blendMins;
+    }
+  }
+}
+
 function periodFromMinutes(m) {
+  const norm = ((m % 1440) + 1440) % 1440;
   for (let i = 0; i < PERIODS.length; i++) {
     const p = PERIODS[i];
-    const inRange = p.start < p.end
-      ? m >= p.start && m < p.end
-      : m >= p.start || m < p.end;
+    const endMod = p.end % 1440;
+    const inRange = p.start < p.end && endMod !== 0
+      ? (norm >= p.start && norm < endMod)
+      : (endMod === 0 ? norm >= p.start : (norm >= p.start || norm < endMod));
     if (inRange) return p;
   }
   return PERIODS[PERIODS.length - 1];
@@ -392,187 +385,156 @@ function periodIndex(id) {
   return PERIODS.findIndex(function (p) { return p.id === id; });
 }
 
-function nextPeriod(id) {
-  const idx = periodIndex(id);
-  return PERIODS[(idx + 1) % PERIODS.length];
-}
-
-/**
- * Compute the blend ratio for automatic mode.
- *
- * The blend window for period P spans from (P.start - P.transitionMins)
- * to P.start.  During this window the ratio for P goes from 0 → 1.
- * After P.start we are fully in P (ratio = 1) until the next window begins.
- *
- * Returns { from: periodId, to: periodId, ratio: 0..1 }
- *   where ratio = 0 → fully "from", ratio = 1 → fully "to"
- */
 function computeBlend(m) {
-  const totalMins = m; // minutes from midnight
+  const totalMins = ((m % 1440) + 1440) % 1440;
+  const ordered = PERIODS.slice().sort(function (a, b) { return a.start - b.start; });
 
-  for (let i = 0; i < PERIODS.length; i++) {
-    const p = PERIODS[i];
-    const prev = PERIODS[(i + PERIODS.length - 1) % PERIODS.length];
-    const window = p.transitionMins;
-    // Blend window starts `window` minutes before p.start
-    const blendStart = (p.start - window + 1440) % 1440;
+  for (let i = 0; i < ordered.length; i++) {
+    const p = ordered[i];
+    const prev = ordered[(i + ordered.length - 1) % ordered.length];
+    const span = minutesForward(prev.start, p.start) || 1440;
+    const win = Math.min(p.transitionMins || 20, Math.max(5, Math.floor(span * 0.45)));
+    const blendStart = (p.start - win + 1440) % 1440;
 
-    // Is m inside the blend window [blendStart, p.start)?
-    let inBlend;
-    if (blendStart < p.start) {
-      inBlend = totalMins >= blendStart && totalMins < p.start;
-    } else {
-      // wraps midnight
-      inBlend = totalMins >= blendStart || totalMins < p.start;
-    }
+    const inBlend = blendStart < p.start
+      ? (totalMins >= blendStart && totalMins < p.start)
+      : (totalMins >= blendStart || totalMins < p.start);
 
     if (inBlend) {
       const elapsed = minutesForward(blendStart, totalMins);
-      const ratio = Math.max(0, Math.min(1, elapsed / window));
+      const ratio = Math.max(0, Math.min(1, elapsed / win));
       return { from: prev.id, to: p.id, ratio: ratio };
     }
   }
 
-  // Fully inside current period
-  const cur = periodFromMinutes(m);
+  const cur = periodFromMinutes(totalMins);
   return { from: cur.id, to: cur.id, ratio: 1.0 };
 }
 
-/* ══════════════════════════════════════════════
-   HUD — CLOCK / DATE / WEEKDAY
-   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   5. CLOCK, EDITORIAL DATE & AUTO-RESUME CHECK
+   ══════════════════════════════════════════════════════════════════════════ */
 
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'
-];
-const DAY_NAMES = [
-  'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
-];
+const SHORT_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 function updateHUD() {
   const d = new Date();
   const h = d.getHours();
   const min = String(d.getMinutes()).padStart(2, '0');
 
-  // 24-hour by default. The brief asks for a desktop clock, not an alarm clock;
-  // a leading zero is kept so the glyph count never changes and the oversized
-  // type does not shift sideways once an hour.
   const timeStr = SETTINGS.clock24
     ? String(h).padStart(2, '0') + ':' + min
     : (h % 12 || 12) + ':' + min + ' ' + (h >= 12 ? 'PM' : 'AM');
 
-  // Date: "TUESDAY · 22 SEPTEMBER 2026"
-  if (hudDateEl) hudDateEl.textContent =
-    DAY_NAMES[d.getDay()].toUpperCase() + ' · ' + d.getDate() + ' ' + MONTH_NAMES[d.getMonth()].toUpperCase() + ' ' + d.getFullYear();
+  // Clean mixed-case editorial date above the clock matching reference image-1.png
+  // while keeping the 4-digit year for unambiguous system display.
+  const dateStr = SHORT_DAYS[d.getDay()] + ', ' + SHORT_MONTHS[d.getMonth()] + ' ' + d.getDate() + ' · ' + d.getFullYear();
 
-  if (hudTimeEl) hudTimeEl.textContent = timeStr;
+  if (hudDateEl && hudDateEl.textContent !== dateStr) hudDateEl.textContent = dateStr;
+  if (hudTimeEl && hudTimeEl.textContent !== timeStr) hudTimeEl.textContent = timeStr;
+  if (drawerClockVal && drawerClockVal.textContent !== timeStr) drawerClockVal.textContent = timeStr;
+  if (drawerDateSub) {
+    const shortSub = SHORT_DAYS[d.getDay()] + ' ' + SHORT_MONTHS[d.getMonth()] + ' ' + d.getDate();
+    if (drawerDateSub.textContent !== shortSub) drawerDateSub.textContent = shortSub;
+  }
+
+  // Optional "resume at next scheduled time period" policy after manual pick:
+  if (mode === 'manual' &&
+      !activeSingleWallpaper &&
+      SETTINGS.manualResumeMode === 'nextBoundary' &&
+      manualOriginScheduleId) {
+    const scheduledNow = periodFromMinutes(h * 60 + d.getMinutes());
+    if (scheduledNow && scheduledNow.id !== manualOriginScheduleId) {
+      manualOriginScheduleId = null;
+      setAutoScene(true);
+    }
+  }
 }
 
-/* ══════════════════════════════════════════════
-   BATTERY WIDGET
-   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   6. BATTERY & SYSTEM CONNECTIVITY BRIDGES
+   ══════════════════════════════════════════════════════════════════════════ */
 
 function renderBattery(pct, charging) {
-  if (!batteryFill || !batteryPctEl) return;
   const pctClamped = Math.max(0, Math.min(100, Math.round(pct)));
-  batteryFill.style.width = pctClamped + '%';
-  batteryFill.classList.toggle('is-low', !charging && pctClamped <= 20);
-  batteryFill.classList.toggle('is-charging', charging);
-  batteryPctEl.textContent = pctClamped + '%';
-  setBatteryStatus(charging);
-  if (batteryWidget) batteryWidget.classList.remove('is-unavailable');
-}
+  telemetryState.batteryAvailable = true;
+  telemetryState.batteryPct = pctClamped;
+  telemetryState.batteryCharging = !!charging;
 
-/**
- * Charging used to be written into a `#battery-status` element that no longer
- * exists. The state now lives on the widget itself: a class for the glow, and
- * an accessible label so it is not colour-only.
- */
-function setBatteryStatus(charging) {
-  if (!batteryWidget) return;
-  batteryWidget.classList.toggle('is-charging', !!charging);
-  // The existing CSS hooks the state off the fill element.
-  if (batteryFill) batteryFill.classList.toggle('is-charging', !!charging);
-  const pct = batteryPctEl ? batteryPctEl.textContent : '';
-  batteryWidget.setAttribute('aria-label',
-    'Battery ' + (pct || 'unknown') + (charging ? ', charging' : ''));
-  batteryWidget.title = charging ? 'Battery - charging' : 'Battery';
+  if (batteryFill) {
+    batteryFill.style.width = pctClamped + '%';
+    batteryFill.classList.toggle('is-low', !charging && pctClamped <= 20);
+    batteryFill.classList.toggle('is-charging', !!charging);
+  }
+  if (batteryPctEl) batteryPctEl.textContent = pctClamped + '%';
+  if (batteryWidget) {
+    batteryWidget.classList.remove('is-unavailable');
+    batteryWidget.classList.toggle('is-charging', !!charging);
+    batteryWidget.setAttribute('aria-label', 'Battery ' + pctClamped + '%' + (charging ? ', charging' : ''));
+    batteryWidget.title = charging ? 'Battery ' + pctClamped + '% (Charging)' : 'Battery ' + pctClamped + '%';
+  }
+  if (drawerBatteryVal) drawerBatteryVal.textContent = pctClamped + '%';
+  if (drawerBatterySub) drawerBatterySub.textContent = charging ? 'Charging' : (pctClamped <= 20 ? 'Low battery' : 'On battery');
+  emit('telemetry', telemetryState);
 }
 
 function showBatteryUnavailable() {
-  if (batteryPctEl) batteryPctEl.textContent = 'N/A';
+  telemetryState.batteryAvailable = false;
+  telemetryState.batteryPct = null;
+  if (batteryPctEl) batteryPctEl.textContent = 'AC';
   if (batteryWidget) {
-    batteryWidget.title = 'Battery state is not available in this viewer';
-    batteryWidget.setAttribute('aria-label', 'Battery state unavailable');
+    batteryWidget.title = 'No battery detected (Desktop AC or unavailable in browser)';
+    batteryWidget.setAttribute('aria-label', 'Battery unavailable or desktop AC power');
+    batteryWidget.classList.add('is-unavailable');
   }
-  if (batteryWidget) batteryWidget.classList.add('is-unavailable');
+  if (drawerBatteryVal) drawerBatteryVal.textContent = 'AC / N/A';
+  if (drawerBatterySub) drawerBatterySub.textContent = 'No battery sensor';
+  emit('telemetry', telemetryState);
 }
 
 function initBattery() {
-  // ── Source 1: WebView2 native bridge (C# host → JS message) ──────────
-  // When running inside the NightdriveHost app, the C# BatteryHelper sends
-  // JSON messages via CoreWebView2.PostWebMessageAsJson every 30 seconds.
-  // This gives genuine Windows battery data in all browsers/runtimes.
   if (PLATFORM.webview2) {
     window.chrome.webview.addEventListener('message', function (event) {
       try {
-        const data = typeof event.data === 'string'
-          ? JSON.parse(event.data)
-          : event.data;
-
+        const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
         if (!data) return;
-
         if (data.type === 'battery') {
-          if (data.available === false) {
-            showBatteryUnavailable();
-          } else {
-            renderBattery(data.percent, data.charging);
-          }
-        }
-        else if (data.type === 'connectivity') {
+          if (data.available === false) showBatteryUnavailable();
+          else renderBattery(data.percent, data.charging);
+        } else if (data.type === 'connectivity') {
           updateConnectivity(data.wifi, data.bt, data.audio, data.muted);
+        } else if (data.type === 'media') {
+          handleNativeMediaMessage(data);
         }
       } catch (e) { /* ignore malformed messages */ }
     });
-    // Don't register the browser API — native bridge takes priority.
-    // Show a placeholder until the first message arrives.
     if (batteryPctEl) batteryPctEl.textContent = '…';
-    // No native host answered; the browser API is tried below.
-    // No native host answered (e.g. Lively Wallpaper) — use the browser API.
     setTimeout(function () {
       if (!nativeHostActive) initBrowserBattery();
     }, 4000);
     return;
-  } else {
-    // Linux/macOS standard WebEngine messages
-    window.addEventListener('message', function (event) {
-      try {
-        const data = typeof event.data === 'string'
-          ? JSON.parse(event.data)
-          : event.data;
-        // Generic message payload handler
-        if (data && data.pct !== undefined) {
-          renderBattery(parseInt(data.pct), data.status === 'Charging');
-        }
-      } catch (e) { }
-    });
   }
+
+  window.addEventListener('message', function (event) {
+    try {
+      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
+      if (data && data.pct !== undefined) {
+        renderBattery(parseInt(data.pct, 10), data.status === 'Charging');
+      }
+    } catch (e) { /* ignore */ }
+  });
 
   initBrowserBattery();
 }
 
 function initBrowserBattery() {
-  // ── Source 2: Browser Battery Status API (Chrome/Edge standalone) ─────
   if (!navigator.getBattery) {
     showBatteryUnavailable();
     return;
   }
-
   navigator.getBattery().then(function (battery) {
-    function update() {
-      renderBattery(battery.level * 100, battery.charging);
-    }
+    function update() { renderBattery(battery.level * 100, battery.charging); }
     update();
     battery.addEventListener('levelchange', update);
     battery.addEventListener('chargingchange', update);
@@ -581,70 +543,21 @@ function initBrowserBattery() {
   });
 }
 
-/* ══════════════════════════════════════════════
-   ASSET LOADING
-   ══════════════════════════════════════════════ */
-
-function loadFirstAvailable(paths) {
-  return new Promise(function (resolve) {
-    if (!paths || paths.length === 0) { resolve(null); return; }
-    let index = 0;
-    function tryNext() {
-      if (index >= paths.length) { resolve(null); return; }
-      const src = paths[index++];
-      if (/\.svg($|\?)/i.test(src)) {
-        const xhr = new XMLHttpRequest();
-        xhr.timeout = 2000;
-        xhr.onload = function() {
-          if (xhr.status >= 200 && xhr.status < 300) {
-            resolve({ src: src, kind: 'svg', svg: xhr.responseText });
-          } else {
-            tryNext();
-          }
-        };
-        xhr.onerror = function() { tryNext(); };
-        xhr.ontimeout = function() { tryNext(); };
-        xhr.open('GET', src, true);
-        xhr.send();
-      } else {
-        const img = new Image();
-        img.onload = function() { resolve({ src: src, kind: 'raster' }); };
-        img.onerror = function() { tryNext(); };
-        img.src = src;
-      }
-    }
-    tryNext();
-  });
-}
-
-/* ══════════════════════════════════════════════
-   LEFT CONNECTIVITY PANEL
-   ══════════════════════════════════════════════ */
-
 const wifiBtn = document.getElementById('wifi-btn');
 const btBtn = document.getElementById('bt-btn');
 const wifiStatus = document.getElementById('wifi-status');
 const btStatus = document.getElementById('bt-status');
 
-/**
- * `navigator.onLine` says whether there is a network route, not whether the
- * Wi-Fi radio is up — on Ethernet it is true with the radio off. The chip is
- * labelled accordingly instead of claiming a radio state nobody can read.
- */
 function setWifiState(online) {
+  telemetryState.wifi = !!online;
   if (!wifiBtn || !wifiStatus) return;
-  if (online) {
-    wifiBtn.classList.add('is-on');
-    wifiBtn.classList.remove('is-off');
-    wifiStatus.textContent = 'Online';
-  } else {
-    wifiBtn.classList.add('is-off');
-    wifiBtn.classList.remove('is-on');
-    wifiStatus.textContent = 'Offline';
-  }
+  wifiBtn.classList.toggle('is-on', !!online);
+  wifiBtn.classList.toggle('is-off', !online);
+  wifiStatus.textContent = online ? 'Connected' : 'Offline';
 }
 
 function setBtState(enabled) {
+  telemetryState.bt = enabled;
   if (!btBtn || !btStatus) return;
   if (enabled === true) {
     btBtn.classList.add('is-on');
@@ -656,132 +569,309 @@ function setBtState(enabled) {
     btStatus.textContent = 'Off';
   } else {
     btBtn.classList.remove('is-on', 'is-off');
-    // No host has told us anything, so say so rather than guess.
-    btStatus.textContent = 'n/a';
+    btStatus.textContent = 'Settings';
   }
 }
 
 function updateConnectivity(wifi, bt, audioPct, isMuted) {
-  // A native false is meaningful: it is offline. Only fall back to the
-  // browser's reachability hint when no host value was supplied.
   setWifiState(typeof wifi === 'boolean' ? wifi : navigator.onLine);
   setBtState(bt);
 
-  // Audio on left panel
   const audioWidget = document.getElementById('conn-audio');
   const audioPctEl = document.getElementById('audio-pct');
-  if (audioWidget && audioPctEl) {
-    if (audioPct !== null && audioPct !== undefined) {
-      audioPctEl.textContent = audioPct + '%';
-      if (isMuted) {
-        audioWidget.classList.add('is-off');
-        audioWidget.classList.remove('is-on');
-      } else {
-        audioWidget.classList.add('is-on');
-        audioWidget.classList.remove('is-off');
-      }
-    } else {
-      audioPctEl.textContent = '—';
-      audioWidget.classList.remove('is-on', 'is-off');
-    }
+  if (audioWidget && audioPctEl && audioPct !== null && audioPct !== undefined) {
+    audioPctEl.textContent = isMuted ? 'Muted' : (audioPct + '%');
+    audioWidget.classList.toggle('is-off', !!isMuted);
+    audioWidget.classList.toggle('is-on', !isMuted);
   }
 }
 
-// Control buttons — open the matching OS settings page where supported
-if (wifiBtn) wifiBtn.addEventListener('click', () => openSystemSettings('wifi'));
-if (btBtn) btBtn.addEventListener('click', () => openSystemSettings('bt'));
-const audioWidgetEl = document.getElementById('conn-audio');
-if (audioWidgetEl) audioWidgetEl.addEventListener('click', () => openSystemSettings('sound'));
-
-// Initial state from browser navigator
 setWifiState(navigator.onLine);
 setBtState(null);
+window.addEventListener('online', function () { setWifiState(true); });
+window.addEventListener('offline', function () { setWifiState(false); });
 
-// Live WiFi state from browser events
-window.addEventListener('online', () => setWifiState(true));
-window.addEventListener('offline', () => setWifiState(false));
+/* ══════════════════════════════════════════════════════════════════════════
+   7. REAL MEDIA SESSION (Windows SMTC + Local HTML5 Audio Player)
+   ══════════════════════════════════════════════════════════════════════════ */
 
-// C# WebView2 bridge (receives real system data)
-if (PLATFORM.webview2) {
-  window.chrome.webview.addEventListener('message', function (event) {
-    try {
-      const data = typeof event.data === 'string' ? JSON.parse(event.data) : event.data;
-      if (!data) return;
-      if (data.type === 'connectivity') {
-        updateConnectivity(data.wifi, data.bt, data.audio, data.muted);
+const musicAudioEl = document.getElementById('music-audio');
+let localAudioUrl = null;
+
+const MEDIA = {
+  source: 'none',       // 'smtc' | 'local' | 'none'
+  supported: PLATFORM.webview2,
+  connected: false,
+  playing: false,
+  title: '',
+  artist: '',
+  sourceApp: '',
+  positionSec: 0,
+  durationSec: 0,
+  canPlayPause: false,
+  canNext: false,
+  canPrev: false,
+  canSeek: false
+};
+
+function handleNativeMediaMessage(msg) {
+  // If the user is actively playing a loaded local audio file, keep local control
+  // until paused/cleared; otherwise reflect live Windows SMTC state truthfully.
+  if (MEDIA.source === 'local' && MEDIA.playing) return;
+
+  if (!msg.connected) {
+    if (MEDIA.source !== 'local') {
+      MEDIA.source = 'none';
+      MEDIA.supported = !!msg.supported;
+      MEDIA.connected = false;
+      MEDIA.playing = false;
+      MEDIA.title = '';
+      MEDIA.artist = '';
+      MEDIA.sourceApp = '';
+      MEDIA.positionSec = 0;
+      MEDIA.durationSec = 0;
+      MEDIA.canPlayPause = false;
+      MEDIA.canNext = false;
+      MEDIA.canPrev = false;
+      MEDIA.canSeek = false;
+      emit('media', MEDIA);
+    }
+    return;
+  }
+
+  MEDIA.source = 'smtc';
+  MEDIA.supported = true;
+  MEDIA.connected = true;
+  MEDIA.playing = !!msg.playing;
+  MEDIA.title = msg.title || 'Active Windows Media';
+  MEDIA.artist = msg.artist || cleanSourceAppName(msg.sourceApp);
+  MEDIA.sourceApp = cleanSourceAppName(msg.sourceApp);
+  MEDIA.positionSec = typeof msg.positionSec === 'number' ? msg.positionSec : 0;
+  MEDIA.durationSec = typeof msg.durationSec === 'number' ? msg.durationSec : 0;
+  MEDIA.canPlayPause = msg.canPlayPause !== false;
+  MEDIA.canNext = !!msg.canNext;
+  MEDIA.canPrev = !!msg.canPrev;
+  MEDIA.canSeek = !!msg.canSeek;
+  emit('media', MEDIA);
+}
+
+function cleanSourceAppName(appId) {
+  if (!appId) return 'Windows Media';
+  const base = String(appId).split('!')[0].replace(/\.exe$/i, '');
+  const parts = base.split(/[.\\/]/);
+  return parts[parts.length - 1] || 'Windows Media';
+}
+
+function bindLocalMusicAudio() {
+  if (!musicAudioEl) return;
+  const syncLocal = function () {
+    if (MEDIA.source !== 'local') return;
+    MEDIA.playing = !musicAudioEl.paused && !musicAudioEl.ended;
+    MEDIA.positionSec = musicAudioEl.currentTime || 0;
+    MEDIA.durationSec = isFinite(musicAudioEl.duration) ? musicAudioEl.duration : 0;
+    MEDIA.canSeek = MEDIA.durationSec > 0;
+    emit('media', MEDIA);
+  };
+  musicAudioEl.addEventListener('timeupdate', syncLocal);
+  musicAudioEl.addEventListener('loadedmetadata', syncLocal);
+  musicAudioEl.addEventListener('play', syncLocal);
+  musicAudioEl.addEventListener('pause', syncLocal);
+  musicAudioEl.addEventListener('ended', syncLocal);
+}
+bindLocalMusicAudio();
+
+function loadLocalAudio(url, meta) {
+  if (!musicAudioEl || !url) return;
+  if (localAudioUrl && localAudioUrl !== url && typeof URL.revokeObjectURL === 'function') {
+    try { URL.revokeObjectURL(localAudioUrl); } catch (e) { /* ignore */ }
+  }
+  localAudioUrl = url;
+  musicAudioEl.src = url;
+  applyAudioSettings();
+
+  MEDIA.source = 'local';
+  MEDIA.connected = true;
+  MEDIA.playing = false;
+  MEDIA.title = (meta && meta.title) ? meta.title : 'Local Audio Track';
+  MEDIA.artist = (meta && meta.artist) ? meta.artist : 'Local File';
+  MEDIA.sourceApp = 'Local Audio';
+  MEDIA.positionSec = 0;
+  MEDIA.durationSec = 0;
+  MEDIA.canPlayPause = true;
+  MEDIA.canPrev = true;
+  MEDIA.canNext = false;
+  MEDIA.canSeek = true;
+  emit('media', MEDIA);
+
+  if (typeof musicAudioEl.play === 'function') {
+    const p = musicAudioEl.play();
+    if (p && p.catch) p.catch(function () { emit('media', MEDIA); });
+  }
+}
+
+function mediaPlayPause() {
+  if (MEDIA.source === 'local' && musicAudioEl && musicAudioEl.getAttribute('src')) {
+    if (musicAudioEl.paused) {
+      const p = musicAudioEl.play();
+      if (p && p.catch) p.catch(function () {});
+    } else {
+      musicAudioEl.pause();
+    }
+    return true;
+  }
+  if (PLATFORM.webview2 && nativeHostActive && MEDIA.connected) {
+    postToHost('media:toggle');
+    return true;
+  }
+  return false;
+}
+
+function mediaNext() {
+  if (MEDIA.source === 'local' && musicAudioEl && isFinite(musicAudioEl.duration)) {
+    musicAudioEl.currentTime = Math.min(musicAudioEl.duration, (musicAudioEl.currentTime || 0) + 15);
+    return true;
+  }
+  if (PLATFORM.webview2 && nativeHostActive && MEDIA.connected) {
+    postToHost('media:next');
+    return true;
+  }
+  return false;
+}
+
+function mediaPrev() {
+  if (MEDIA.source === 'local' && musicAudioEl) {
+    musicAudioEl.currentTime = 0;
+    return true;
+  }
+  if (PLATFORM.webview2 && nativeHostActive && MEDIA.connected) {
+    postToHost('media:prev');
+    return true;
+  }
+  return false;
+}
+
+function mediaSeek(seconds) {
+  const sec = Math.max(0, Number(seconds) || 0);
+  if (MEDIA.source === 'local' && musicAudioEl && isFinite(musicAudioEl.duration)) {
+    musicAudioEl.currentTime = Math.min(musicAudioEl.duration, sec);
+    return true;
+  }
+  if (PLATFORM.webview2 && nativeHostActive && MEDIA.connected && MEDIA.canSeek) {
+    postToHost('media:seek:' + sec.toFixed(2));
+    return true;
+  }
+  return false;
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   8. ASSET RESOLUTION, STUDIO PACKS & LAYER POPULATION
+   ══════════════════════════════════════════════════════════════════════════ */
+
+function loadFirstAvailable(paths) {
+  return new Promise(function (resolve) {
+    if (!paths || paths.length === 0) { resolve(null); return; }
+    let index = 0;
+    function tryNext() {
+      if (index >= paths.length) { resolve(null); return; }
+      const src = paths[index++];
+      if (/\.svg($|\?)/i.test(src)) {
+        const xhr = new XMLHttpRequest();
+        xhr.timeout = 2000;
+        xhr.onload = function () {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve({ src: src, kind: 'svg', svg: xhr.responseText });
+          } else {
+            tryNext();
+          }
+        };
+        xhr.onerror = function () { tryNext(); };
+        xhr.ontimeout = function () { tryNext(); };
+        xhr.open('GET', src, true);
+        xhr.send();
+      } else {
+        const img = new Image();
+        img.onload = function () { resolve({ src: src, kind: 'raster' }); };
+        img.onerror = function () { tryNext(); };
+        img.src = src;
       }
-    } catch (e) { }
+    }
+    tryNext();
   });
 }
-/** Load scene + headlight assets for a period, caching the result. */
-/**
- * Is the viewport taller than it is wide? Re-read on every asset load so a
- * window resize or a monitor rotation picks the other plate.
- */
+
 function prefersPortraitAsset() {
   return window.innerHeight > window.innerWidth * 1.05;
 }
 
-/**
- * Load the scene + headlights for a period.
- *
- * A `portrait` plate is preferred on a tall viewport when one actually exists;
- * otherwise the landscape plate is used and `fillLayer` presents it contained
- * over a blurred backdrop rather than cropping it. Probe results are cached so
- * a missing portrait file is only tried once.
- */
+function resolvePeriodStudioWallpaper(periodId) {
+  if (studioWallpaperOverrides[periodId]) return studioWallpaperOverrides[periodId];
+  if (!STUDIO_CATALOG || !Array.isArray(STUDIO_CATALOG.packs)) return null;
+  const packId = SETTINGS.activePack || 'cascade-overlook';
+  if (packId === 'cascade-overlook') return null; // use standard SCENE_ASSETS path
+  const pack = STUDIO_CATALOG.packs.find(function (pk) { return pk.id === packId; });
+  if (!pack || !pack.periods || !pack.periods[periodId]) return null;
+  const wpId = pack.periods[periodId];
+  return (STUDIO_CATALOG.wallpapers || []).find(function (w) { return w.id === wpId; }) || null;
+}
+
 async function ensureAssets(periodId) {
   const wantPortrait = prefersPortraitAsset();
-  const cached = assetsCache[periodId];
-  if (cached && assetsReady[periodId] && cached.orientation === (wantPortrait ? 'portrait' : 'landscape')) {
-    return cached;
+  const studioWp = activeSingleWallpaper || resolvePeriodStudioWallpaper(periodId);
+  const cacheKey = periodId + '|' + (wantPortrait ? 'P' : 'L') + '|' + (studioWp ? studioWp.src : 'default');
+
+  if (assetsCache[cacheKey] && assetsReady[cacheKey]) {
+    return assetsCache[cacheKey];
   }
 
   const assets = ASSETS[periodId] || { scene: [], headlights: [] };
   const period = periodById(periodId);
 
   let sceneAsset = null;
-  let orientation = 'landscape';
-  if (wantPortrait && assets.portrait && assets.portrait.length) {
-    sceneAsset = await loadFirstAvailable(assets.portrait);
-    if (sceneAsset) orientation = 'portrait';
+  let hlAsset = null;
+  let carAsset = null;
+  let focus = assets.focus;
+  let supportsCarOverlay = false;
+  let ridgeMinY = null;
+
+  if (studioWp && studioWp.src) {
+    sceneAsset = await loadFirstAvailable([studioWp.src]);
+    if (!sceneAsset) {
+      // Missing/revoked imported wallpaper safety: fall back cleanly to built-in plate!
+      sceneAsset = await loadFirstAvailable(assets.scene);
+    } else {
+      focus = studioWp.focus || focus;
+      supportsCarOverlay = studioWp.supportsCarOverlay === true;
+      ridgeMinY = typeof studioWp.ridgeMinY === 'number' ? studioWp.ridgeMinY : null;
+      if (studioWp.headlightsSrc && period && period.headlights) {
+        hlAsset = await loadFirstAvailable([studioWp.headlightsSrc]);
+      }
+    }
+  } else {
+    if (wantPortrait && assets.portrait && assets.portrait.length) {
+      sceneAsset = await loadFirstAvailable(assets.portrait);
+    }
+    if (!sceneAsset) sceneAsset = await loadFirstAvailable(assets.scene);
+    hlAsset = period && period.headlights
+      ? await loadFirstAvailable(assets.headlights)
+      : null;
+    carAsset = assets.cursor && assets.cursor.length
+      ? await loadFirstAvailable(assets.cursor)
+      : null;
   }
-  if (!sceneAsset) sceneAsset = await loadFirstAvailable(assets.scene);
 
-  const hlAsset = period && period.headlights
-    ? await loadFirstAvailable(assets.headlights)
-    : null;
-
-  // Optional transparent car layer. Absent by design today; when a period does
-  // supply one it is composited over the plate, which is what makes the car and
-  // the landscape independently replaceable.
-  const carAsset = assets.cursor && assets.cursor.length
-    ? await loadFirstAvailable(assets.cursor)
-    : null;
-
-  assetsCache[periodId] = {
+  assetsCache[cacheKey] = {
     scene: sceneAsset,
     headlights: hlAsset,
     cursor: carAsset,
-    orientation: orientation
+    focus: focus,
+    supportsCarOverlay: supportsCarOverlay,
+    ridgeMinY: ridgeMinY
   };
-  assetsReady[periodId] = true;
-  return assetsCache[periodId];
+  assetsReady[cacheKey] = true;
+  return assetsCache[cacheKey];
 }
 
-/* ══════════════════════════════════════════════
-   LAYER POPULATION
-   ══════════════════════════════════════════════ */
-
-/**
- * Present a plate without stretching it.
- *
- * Landscape plates simply cover the frame (cropping is fine and intended).
- * A tall plate — anything past 4:5 — is shown whole over a blurred copy of
- * itself instead, so a portrait asset on a laptop is neither stretched nor
- * reduced to a narrow middle strip.
- */
-const MAX_COVER_ASPECT = 0.8;   // width / height; below this, switch to contain
+const MAX_COVER_ASPECT = 0.8;
 
 function applyPlateAspect(layer, img, src) {
   const apply = function () {
@@ -802,7 +892,19 @@ function applyPlateAspect(layer, img, src) {
   else img.addEventListener('load', apply, { once: true });
 }
 
-function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
+function carPeriodFilter(periodId) {
+  switch (periodId) {
+    case 'morning': return 'brightness(0.96) contrast(0.98) saturate(0.95)';
+    case 'day': return 'brightness(1.03) contrast(1.02)';
+    case 'goldenHour': return 'brightness(0.98) sepia(0.10) saturate(1.08)';
+    case 'dusk': return 'brightness(0.86) contrast(1.04) hue-rotate(-4deg)';
+    case 'night': return 'brightness(0.76) contrast(1.06) hue-rotate(-6deg)';
+    case 'midnight': return 'brightness(0.68) contrast(1.08) hue-rotate(-8deg)';
+    default: return 'none';
+  }
+}
+
+function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset, meta) {
   const fallback = layer.querySelector('.scene-fallback');
   const svgScene = layer.querySelector('.svg-scene');
   const sceneImg = layer.querySelector('.scene-img');
@@ -811,9 +913,13 @@ function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
   const carImg = layer.querySelector('.car-img');
 
   fallback.setAttribute('data-period', period.id);
+  layer.dataset.supportsCar = (meta && meta.supportsCarOverlay) ? '1' : '0';
+  layer.dataset.periodId = period.id;
+
   if (carImg) {
     carImg.removeAttribute('src');
     carImg.classList.remove('is-loaded');
+    carImg.style.filter = '';
   }
   svgScene.innerHTML = '';
   svgLights.innerHTML = '';
@@ -821,10 +927,7 @@ function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
   headImg.removeAttribute('src');
   headImg.classList.remove('is-on');
 
-  // Focal crop for this period (the car's position in the plate). The value
-  // lives in the asset table, not in PERIODS, so a future customisation phase
-  // can point a period at a completely different plate and crop.
-  const focus = ASSETS[period.id] && ASSETS[period.id].focus;
+  const focus = (meta && meta.focus) || (ASSETS[period.id] && ASSETS[period.id].focus);
   if (focus) {
     const focusValue = focus[0] + ' ' + focus[1];
     if (layer.style.getPropertyValue('--focus') !== focusValue) {
@@ -832,7 +935,6 @@ function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
     }
   }
 
-  // Scene
   if (sceneAsset && sceneAsset.kind === 'svg') {
     svgScene.innerHTML = sceneAsset.svg;
     sceneImg.removeAttribute('src');
@@ -848,7 +950,6 @@ function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
     layer.classList.remove('layer--contain');
   }
 
-  // Optional car layer, above the plate and below the beams.
   if (carImg && carAsset && carAsset.kind === 'raster') {
     carImg.src = carAsset.src;
     carImg.classList.add('is-loaded');
@@ -857,12 +958,10 @@ function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
     layer.classList.remove('layer--has-car');
   }
 
-  // Same plate, clipped to everything below the measured skyline. This is the
-  // copy that paints back over the clock (see the PHASE 2 section at the end).
   applyForegroundFor(layer, period.id);
 
-  // Headlights (layer's intrinsic image — opacity controlled by caller)
-  if (period.headlights && headlightAsset) {
+  // Integrated headlights only when no separate Car Studio vehicle is replacing the scene
+  if (headlightAsset && (period.headlights || headlightOverride === true)) {
     if (headlightAsset.kind === 'svg') {
       svgLights.innerHTML = headlightAsset.svg;
       svgLights.classList.add('is-on');
@@ -871,27 +970,14 @@ function fillLayer(layer, period, sceneAsset, headlightAsset, carAsset) {
       headImg.classList.add('is-on');
     }
   }
+
+  drawStudioCarBeams();
 }
 
-/* ══════════════════════════════════════════════
-   COLOUR-TEMPERATURE OVERLAY
-   ══════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════════════════════
+   9. COLOUR GRADING, HEADLIGHT MIX & DYNAMIC CAR STUDIO BEAMS
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/**
- * Colour grading overlay.
- *
- * Historically this was a `multiply` layer ramped to 85 % opacity, and its
- * `rgba()` colours carried their own alpha. Multiply is a darkening blend, so
- * the two alphas compounded: midnight ended up at 5.7/255 mean luminance with
- * only five distinct tones left in the sky — the smooth night gradient was
- * posterised into visible bands before it reached the screen.
- *
- * Now the overlay is a gentle `soft-light` tint (see styles.css) that shifts
- * the hue of each period without crushing its luminance range, and the two
- * neighbouring tint colours are interpolated so a crossfade never steps.
- */
-
-/** Parse 'rgba(r,g,b,a)' / 'rgb(r,g,b)' into [r,g,b,a]. */
 function parseRGBA(str) {
   const m = String(str || '').match(/rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)/i);
   if (!m) return [0, 0, 0, 0];
@@ -901,100 +987,154 @@ function parseRGBA(str) {
 function lerpCTColor(colorA, colorB, t) {
   const a = parseRGBA(colorA);
   const b = parseRGBA(colorB);
-  const mix = (i) => a[i] + (b[i] - a[i]) * t;
-  const r = Math.round(mix(0));
-  const g = Math.round(mix(1));
-  const bl = Math.round(mix(2));
-  const al = Math.round(mix(3) * 1000) / 1000;
-  return 'rgba(' + r + ',' + g + ',' + bl + ',' + al + ')';
+  const mix = function (i) { return a[i] + (b[i] - a[i]) * t; };
+  return 'rgba(' + Math.round(mix(0)) + ',' + Math.round(mix(1)) + ',' + Math.round(mix(2)) + ',' + (Math.round(mix(3) * 1000) / 1000) + ')';
 }
 
 let lastCT = '';
-
 function applyCTOverlay(blendState) {
   const fromP = periodById(blendState.from);
   const toP = periodById(blendState.to);
   if (!fromP || !toP || !ctOverlay) return;
-
-  // 1 = fully in `to`, 0 = fully in `from`.
   const t = blendState.from === blendState.to ? 1 : blendState.ratio;
   const colour = lerpCTColor(fromP.ctColor || 'rgba(0,0,0,0)', toP.ctColor || 'rgba(0,0,0,0)', t);
-
-  // Only touch the DOM when the value actually changed (this runs at 60 fps).
   if (colour !== lastCT) {
     lastCT = colour;
     ctOverlay.style.background = colour;
   }
 }
 
-/* ══════════════════════════════════════════════
-   ACCENT THEMING
-   ══════════════════════════════════════════════ */
-
 function applyAccent(period) {
-  root.style.setProperty('--accent', period.accent || '#c49a4a');
-  root.style.setProperty('--accent-dim', period.accentDim || '#7a5f28');
+  if (!period) return;
+  root.style.setProperty('--accent', period.accent || '#7da9ff');
+  root.style.setProperty('--accent-dim', period.accentDim || 'rgba(125,169,255,0.22)');
+  if (drawerPeriodBadge) drawerPeriodBadge.textContent = period.label;
 }
 
-/* ══════════════════════════════════════════════
-   HEADLIGHT FADE
-   ══════════════════════════════════════════════ */
+function effectiveBeamPeak() {
+  return HEADLIGHT_OPACITY * Math.max(0.2, Math.min(1, (SETTINGS.beamIntensity || 75) / 85));
+}
 
-/** Peak overlay opacity — restrained, so beams add light instead of haze. */
-const HEADLIGHT_OPACITY = 0.55;
-
-/**
- * Set the opacity of all headlight overlay images/SVGs in a layer.
- * During the dusk blend window the layer itself fades in, carrying the beams
- * with it; in full night they sit at HEADLIGHT_OPACITY.
- */
 function setHeadlightOpacity(layer, opacity) {
+  if (!layer) return;
   const svgLights = layer.querySelector('.svg-headlights');
   const headImg = layer.querySelector('.headlight-img');
   const op = Math.max(0, Math.min(1, opacity));
   const value = op.toFixed(3);
 
-  // rAF calls this every frame; skip the style write when nothing changed.
-  if (svgLights && !svgLights.classList.contains('headlight-flare') &&
-      svgLights.dataset.opacity !== value) {
+  if (svgLights && !svgLights.classList.contains('headlight-flare') && svgLights.dataset.opacity !== value) {
     svgLights.dataset.opacity = value;
     svgLights.style.opacity = value;
   }
-  if (headImg && !headImg.classList.contains('headlight-flare') &&
-      headImg.dataset.opacity !== value) {
+  if (headImg && !headImg.classList.contains('headlight-flare') && headImg.dataset.opacity !== value) {
     headImg.dataset.opacity = value;
     headImg.style.opacity = value;
   }
 }
 
-/**
- * Compute headlight opacity from the blend state.
- * Headlights are ON for dusk and night. During the dusk transition window
- * (approaching dusk from goldenHour) they fade in proportionally.
- * During the morning transition (night → morning) they fade out.
- */
-function headlightOpacityFor(periodId, blendState) {
-  // A manual override wins over the time of day until the user goes back to
-  // automatic, so dragging the switch cannot be undone a frame later.
-  if (typeof headlightOverride !== 'undefined' && headlightOverride !== null) {
-    return headlightOverride ? HEADLIGHT_OPACITY : 0;
-  }
+function shouldShowHeadlights(periodId) {
+  if (headlightOverride === true) return true;
+  if (headlightOverride === false) return false;
   const p = periodById(periodId);
-  if (!p || !p.headlights) return 0;
-  // The layer's own opacity already fades the whole plate in and out, so the
-  // overlay just holds its target level; the two crossfade together.
-  return HEADLIGHT_OPACITY;
+  return !!(p && p.headlights);
 }
 
-/**
- * Orientation changes: forget the cached orientation and repopulate the
- * visible layer. Debounced so dragging a window edge does not thrash decodes.
- */
+function headlightOpacityFor(periodId) {
+  return shouldShowHeadlights(periodId) ? effectiveBeamPeak() : 0;
+}
+
+const carBeamCanvas = document.getElementById('car-beam-canvas');
+const carBeamCtx = carBeamCanvas ? carBeamCanvas.getContext('2d') : null;
+
+function drawStudioCarBeams() {
+  if (!carBeamCanvas || !carBeamCtx) return;
+  const periodId = currentId || layerAId || SETTINGS.sceneId || 'night';
+  const visibleLayer = (!frontIsA && mode === 'manual') ? layerB : layerA;
+  const layerHasCar = visibleLayer && visibleLayer.classList.contains('layer--has-car');
+  const lightsOn = shouldShowHeadlights(periodId);
+
+  if (!layerHasCar || !lightsOn || !activeStudioCar || !Array.isArray(activeStudioCar.lamps)) {
+    carBeamCanvas.style.opacity = '0';
+    return;
+  }
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  if (carBeamCanvas.width !== Math.round(vw * dpr) || carBeamCanvas.height !== Math.round(vh * dpr)) {
+    carBeamCanvas.width = Math.round(vw * dpr);
+    carBeamCanvas.height = Math.round(vh * dpr);
+  }
+  if (typeof carBeamCtx.setTransform === 'function') {
+    carBeamCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  carBeamCtx.clearRect(0, 0, vw, vh);
+
+  const focusStr = (visibleLayer && visibleLayer.style.getPropertyValue('--focus')) || '58% 68%';
+  const fParts = focusStr.trim().split(/\s+/);
+  const fx = (parseFloat(fParts[0]) || 58) / 100;
+  const fy = (parseFloat(fParts[1]) || 68) / 100;
+  const rect = plateRect(1376, 768, vw, vh, fx, fy);
+
+  const mapPt = function (pt) {
+    return [rect.left + (pt[0] / 1376) * rect.width, rect.top + (pt[1] / 768) * rect.height];
+  };
+  const target = mapPt(activeStudioCar.beamTarget || [275, 742]);
+
+  activeStudioCar.lamps.forEach(function (lamp) {
+    const lp = mapPt(lamp);
+    const dx = target[0] - lp[0];
+    const dy = target[1] - lp[1];
+    const reach = Math.hypot(dx, dy) * 1.15;
+    const ux = dx / (Math.hypot(dx, dy) || 1);
+    const uy = dy / (Math.hypot(dx, dy) || 1);
+    const px = -uy;
+    const py = ux;
+
+    if (typeof carBeamCtx.createLinearGradient === 'function') {
+      const grad = carBeamCtx.createLinearGradient(lp[0], lp[1], lp[0] + ux * reach, lp[1] + uy * reach);
+      grad.addColorStop(0, 'rgba(255, 232, 188, 0.52)');
+      grad.addColorStop(0.35, 'rgba(255, 206, 134, 0.24)');
+      grad.addColorStop(1, 'rgba(255, 190, 110, 0)');
+      carBeamCtx.fillStyle = grad;
+    } else {
+      carBeamCtx.fillStyle = 'rgba(255, 214, 150, 0.25)';
+    }
+
+    carBeamCtx.beginPath();
+    carBeamCtx.moveTo(lp[0] - px * 6, lp[1] - py * 6);
+    carBeamCtx.lineTo(lp[0] + ux * reach - px * (reach * 0.28), lp[1] + uy * reach - py * (reach * 0.28));
+    carBeamCtx.lineTo(lp[0] + ux * reach + px * (reach * 0.28), lp[1] + uy * reach + py * (reach * 0.28));
+    carBeamCtx.lineTo(lp[0] + px * 6, lp[1] + py * 6);
+    carBeamCtx.closePath();
+    carBeamCtx.fill();
+
+    // Crisp headlamp bloom core
+    if (typeof carBeamCtx.createRadialGradient === 'function') {
+      const core = carBeamCtx.createRadialGradient(lp[0], lp[1], 1, lp[0], lp[1], 24);
+      core.addColorStop(0, 'rgba(255, 248, 232, 0.92)');
+      core.addColorStop(0.4, 'rgba(255, 218, 158, 0.42)');
+      core.addColorStop(1, 'rgba(255, 200, 120, 0)');
+      carBeamCtx.fillStyle = core;
+      carBeamCtx.beginPath();
+      carBeamCtx.arc(lp[0], lp[1], 24, 0, Math.PI * 2);
+      carBeamCtx.fill();
+    }
+  });
+
+  carBeamCanvas.style.opacity = effectiveBeamPeak().toFixed(3);
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   10. AUTO BLEND LOOP & MANUAL CROSSFADE
+   ══════════════════════════════════════════════════════════════════════════ */
+
 let orientationTimer = null;
 let lastPortraitState = prefersPortraitAsset();
 
 function onViewportResize() {
-  const now = prefersPortraitAsset();
+  drawStudioCarBeams();
+  const now = prefersPortraitState();
   if (now === lastPortraitState) return;
   lastPortraitState = now;
   clearTimeout(orientationTimer);
@@ -1009,30 +1149,17 @@ function onViewportResize() {
     }
   }, 250);
 }
+function prefersPortraitState() { return prefersPortraitAsset(); }
 
 window.addEventListener('resize', onViewportResize);
 window.addEventListener('orientationchange', onViewportResize);
-
-/* ══════════════════════════════════════════════
-   RAF BLEND LOOP (AUTO MODE)
-   ══════════════════════════════════════════════ */
-
-let currentBlend = { from: null, to: null, ratio: 1.0 };
-let layerAId = null;  // which period is in layerA
-let layerBId = null;  // which period is in layerB
-// When ratio=1 the "to" period is fully visible.
-// layerA holds the "from" scene, layerB holds the "to" scene.
-// We set: layerA.opacity = 1 - ratio,  layerB.opacity = ratio.
 
 async function ensureLayerPopulated(layer, periodId) {
   const period = periodById(periodId);
   if (!period) return;
   const cached = await ensureAssets(periodId);
-  fillLayer(layer, period, cached.scene, cached.headlights, cached.cursor);
+  fillLayer(layer, period, cached.scene, cached.headlights, cached.cursor, cached);
 }
-
-let lastAccentId = null;
-let lastHeadlightMix = -1;
 
 function rafTick() {
   if (mode !== 'auto') {
@@ -1044,11 +1171,11 @@ function rafTick() {
   const needFrom = blend.from;
   const needTo = blend.to;
 
-  // If both are the same (no blend), just show it fully.
   if (needFrom === needTo) {
     if (layerAId !== needTo) {
       layerAId = needTo;
-      ensureLayerPopulated(layerA, needTo);
+      currentId = needTo;
+      ensureLayerPopulated(layerA, needTo).then(function () { refreshDepth(); });
     }
     if (layersOpacity[0] !== 1) {
       layerA.style.opacity = '1';
@@ -1057,9 +1184,8 @@ function rafTick() {
       layersOpacity[1] = 0;
       syncForegroundOpacity(1, 0);
     }
-
-    const period = periodById(needTo);
-    const hlOp = period && period.headlights ? HEADLIGHT_OPACITY : 0;
+    currentId = needTo;
+    const hlOp = headlightOpacityFor(needTo);
     setHeadlightOpacity(layerA, hlOp);
     setHeadlightOpacity(layerB, 0);
     setHeadlightMix(hlOp / HEADLIGHT_OPACITY);
@@ -1067,8 +1193,7 @@ function rafTick() {
     applyCTOverlay(blend);
     applyAccentFromBlend(blend);
   } else {
-    const ratio = blend.ratio;  // 0 = fully "from", 1 = fully "to"
-
+    const ratio = blend.ratio;
     if (layerAId !== needFrom) {
       layerAId = needFrom;
       ensureLayerPopulated(layerA, needFrom);
@@ -1078,9 +1203,6 @@ function rafTick() {
       ensureLayerPopulated(layerB, needTo);
     }
 
-    // Only write opacity when it moves by a visible amount: at 60 fps the old
-    // code wrote both layers plus the tint every frame for no visual gain,
-    // which kept the compositor busy for the entire 20-minute fade.
     const aOpacity = 1 - ratio;
     if (Math.abs(layersOpacity[0] - aOpacity) > 0.0015) {
       layerA.style.opacity = String(aOpacity);
@@ -1090,8 +1212,8 @@ function rafTick() {
       syncForegroundOpacity(aOpacity, ratio);
     }
 
-    const hlOpA = headlightOpacityFor(needFrom, blend);
-    const hlOpB = headlightOpacityFor(needTo, blend);
+    const hlOpA = headlightOpacityFor(needFrom);
+    const hlOpB = headlightOpacityFor(needTo);
     setHeadlightOpacity(layerA, hlOpA);
     setHeadlightOpacity(layerB, hlOpB);
     setHeadlightMix((hlOpA * (1 - ratio) + hlOpB * ratio) / HEADLIGHT_OPACITY);
@@ -1099,15 +1221,16 @@ function rafTick() {
     applyCTOverlay(blend);
     applyAccentFromBlend(blend);
 
-    // Track the dominant scene label for anything reading `currentId`.
     const domPeriod = ratio >= 0.5 ? periodById(needTo) : periodById(needFrom);
-    if (domPeriod) currentId = domPeriod.id;
+    if (domPeriod && currentId !== domPeriod.id) {
+      currentId = domPeriod.id;
+      refreshDepth();
+    }
   }
 
   rafHandle = requestAnimationFrame(rafTick);
 }
 
-/** Feed the dust field the current headlight strength (used to gate it). */
 function setHeadlightMix(mix) {
   const value = Math.max(0, Math.min(1, mix));
   if (Math.abs(value - lastHeadlightMix) < 0.002) return;
@@ -1116,7 +1239,6 @@ function setHeadlightMix(mix) {
 }
 
 function applyAccentFromBlend(blend) {
-  // Use the dominant (to) period for accent colour
   const p = periodById(blend.to) || periodById(blend.from);
   if (p && p.id !== lastAccentId) {
     lastAccentId = p.id;
@@ -1133,55 +1255,28 @@ function stopRaf() {
   if (rafHandle) { cancelAnimationFrame(rafHandle); rafHandle = null; }
 }
 
-/* ══════════════════════════════════════════════
-   MANUAL MODE — plain CSS crossfade (unchanged from Phase 2)
-   ══════════════════════════════════════════════ */
-
-function describeAssets(sceneAsset, headlightAsset, period) {
-  const notes = [];
-  if (!sceneAsset) {
-    notes.push('⚠ No scene image — CSS gradient fallback active.');
-  } else if (sceneAsset.kind === 'svg') {
-    notes.push('ℹ Placeholder SVG scene (add scene.jpg for photo).');
-  }
-  if (period.headlights) {
-    if (!headlightAsset) notes.push('⚠ No headlight overlay found.');
-    else if (headlightAsset.kind === 'svg') notes.push('ℹ Placeholder SVG headlights.');
-  }
-  return notes.join(' ');
-}
-
 async function showPeriodManual(period, instant) {
   if (!period) return;
-
   if (transitioning && !instant) {
     pendingId = period.id;
     return;
   }
 
-  if (period.id === currentId && !instant) {
-    return;
-  }
-
   const cached = await ensureAssets(period.id);
-  const sceneAsset = cached.scene;
-  const headlightAsset = cached.headlights;
-
-  // Restore CSS-driven transitions for manual mode, at the user's speed.
   const dur = (SETTINGS.transitionMs || TRANSITION_MS) / 1000;
-  layerA.style.transition = 'opacity ' + dur + 's cubic-bezier(0.4,0,0.2,1)';
-  layerB.style.transition = 'opacity ' + dur + 's cubic-bezier(0.4,0,0.2,1)';
+  layerA.style.transition = instant ? 'none' : ('opacity ' + dur + 's cubic-bezier(0.4,0,0.2,1)');
+  layerB.style.transition = instant ? 'none' : ('opacity ' + dur + 's cubic-bezier(0.4,0,0.2,1)');
 
   const front = frontIsA ? layerA : layerB;
   const back = frontIsA ? layerB : layerA;
 
-  fillLayer(back, period, cached.scene, cached.headlights, cached.cursor);
-  const hlOp = period.headlights ? HEADLIGHT_OPACITY : 0;
+  fillLayer(back, period, cached.scene, cached.headlights, cached.cursor, cached);
+  const hlOp = headlightOpacityFor(period.id);
   setHeadlightOpacity(back, hlOp);
-
+  setHeadlightMix(hlOp / HEADLIGHT_OPACITY);
   applyAccent(period);
+  applyCTOverlay({ from: period.id, to: period.id, ratio: 1 });
 
-  // Update layer tracking
   if (frontIsA) { layerBId = period.id; } else { layerAId = period.id; }
 
   if (instant || currentId === null) {
@@ -1189,6 +1284,8 @@ async function showPeriodManual(period, instant) {
     front.style.opacity = '0';
     frontIsA = !frontIsA;
     currentId = period.id;
+    refreshDepth();
+    drawStudioCarBeams();
     return;
   }
 
@@ -1197,6 +1294,8 @@ async function showPeriodManual(period, instant) {
   front.style.opacity = '0';
   frontIsA = !frontIsA;
   currentId = period.id;
+  refreshDepth();
+  drawStudioCarBeams();
   showSceneLabel(period);
 
   setTimeout(function () {
@@ -1211,13 +1310,9 @@ async function showPeriodManual(period, instant) {
   }, SETTINGS.transitionMs || TRANSITION_MS);
 }
 
-/* ══════════════════════════════════════════════
-   SCENE LABEL
-   ══════════════════════════════════════════════ */
-
-function showSceneLabel(period) {
+function showSceneLabel(period, customText) {
   if (!sceneLabelTxt || !sceneLabelEl) return;
-  sceneLabelTxt.textContent = period.label;
+  sceneLabelTxt.textContent = customText || period.label;
   sceneLabelEl.classList.add('is-visible');
   clearTimeout(labelTimer);
   labelTimer = setTimeout(function () {
@@ -1225,98 +1320,27 @@ function showSceneLabel(period) {
   }, LABEL_SHOW_MS);
 }
 
-/* ══════════════════════════════════════════════
-   MODE SWITCHING
-   ══════════════════════════════════════════════ */
-
 function setModeAuto() {
   mode = 'auto';
-  // Remove CSS-driven transition so rAF controls opacity directly
+  activeSingleWallpaper = null;
+  layersOpacity = [-1, -1];
+  layerAId = null;
+  layerBId = null;
   layerA.style.transition = 'none';
   layerB.style.transition = 'none';
   startRaf();
 }
 
+/* ══════════════════════════════════════════════════════════════════════════
+   11. SUBTLE DUST MOTES IN HEADLIGHT BEAMS
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/* ══════════════════════════════════════════════
-   EVENT LISTENERS
-   ══════════════════════════════════════════════ */
-
-
-/* ══════════════════════════════════════════════
-   BOOT
-   ══════════════════════════════════════════════ */
-
-// Boot is a function, called once at the very bottom of this file.
-//
-// It used to run inline here, which meant it executed before the settings,
-// ridge data and car/background state further down had been initialised. Those
-// are `const`/`let`, so anything reached in the same tick threw a temporal-dead-
-// zone ReferenceError - the "white wallpaper on first launch" class of bug.
-// Deferring the call keeps one source of truth and removes the ordering trap
-// entirely.
-function boot() {
-  // 1. Determine initial scene from clock
-  const initM = minutesNow();
-  const initBlend = computeBlend(initM);
-
-  // Populate layerA with the "from" scene synchronously enough
-  // (ensureAssets is async but the rAF won't paint until assets resolve)
-  layerAId = initBlend.from;
-  layerBId = initBlend.to;
-
-  // Pre-load both scenes that may be visible at startup
-  return Promise.all([
-    ensureLayerPopulated(layerA, initBlend.from),
-    ensureLayerPopulated(layerB, initBlend.to)
-  ]).then(function () {
-    logToHost("6. First actual engine frame (assets fetched and painted)");
-
-    // STAGE 3: Notify host to hide fallback Image because first frame is ready
-    if (PLATFORM.webview2) {
-      window.chrome.webview.postMessage(JSON.stringify({ action: 'hide_fallback' }));
-    }
-
-    // STAGE 4: Load secondary non-essential features
-    updateHUD();
-    clockTimer = setInterval(updateHUD, CLOCK_MS);
-    logToHost("7. Essential widgets becoming visible");
-
-    initBattery();
-    initWeather();
-    initParticles();
-    startParticles();
-    logToHost("8. Optional features becoming ready");
-
-    // The startup effect is NOT run here: a wallpaper refresh is not an engine
-    // start. `maybeAutoStartup` plays it only when the saved preference asks
-    // for that, and the drawer button plays it on demand.
-    setModeAuto();
-    applySavedAppearance();
-    maybeAutoStartup();
-  });
-}
-
-/* ══════════════════════════════════════════════
-   CINEMATIC PARTICLES (DUST)
-   ══════════════════════════════════════════════ */
 const particlesCanvas = document.getElementById('particles-canvas');
 const ctx = particlesCanvas ? particlesCanvas.getContext('2d') : null;
 let particles = [];
-let pW = 0, pH = 0;
-let pDpr = 1;
+let pW = 0, pH = 0, pDpr = 1;
 let particlesRunning = false;
-
-/**
- * Dust motes in the headlight cones.
- *
- * The previous implementation was both too strong and too coarse: 70 motes
- * up to 2.2 px drawn on a canvas sized in CSS pixels (so they were re-scaled
- * and smeared on any HiDPI display), drifting across the whole lower half of
- * the frame regardless of where the light actually fell. Here the field is
- * smaller, dimmer, drawn at device resolution, and confined to the beam wedges.
- */
-const PARTICLE_COUNT = 26;
+const PARTICLE_COUNT = 24;
 
 function sizeParticlesCanvas() {
   if (!particlesCanvas) return;
@@ -1334,11 +1358,8 @@ function initParticles() {
   if (!particlesCanvas || !ctx) return;
   sizeParticlesCanvas();
   window.addEventListener('resize', sizeParticlesCanvas);
-
   particles = [];
   for (let i = 0; i < PARTICLE_COUNT; i++) particles.push(spawnParticle(true));
-
-  // Respect a mid-session "reduce motion" change.
   if (REDUCED_MOTION.addEventListener) {
     REDUCED_MOTION.addEventListener('change', function () {
       if (REDUCED_MOTION.matches && particlesCanvas) particlesCanvas.style.opacity = '0';
@@ -1346,30 +1367,28 @@ function initParticles() {
   }
 }
 
-function spawnParticle(randomY = false) {
-  // Two wedges cast by the lamps, which sit low and right of centre.
+function spawnParticle(randomY) {
   const wedge = Math.random() < 0.5 ? -1 : 1;
   const spread = Math.pow(Math.random(), 0.7);
   const yTop = pH * 0.72;
-  const yBottom = pH * 1.02;
+  const yBottom = pH * 0.96;
   const y = randomY ? yTop + Math.random() * (yBottom - yTop) : yBottom;
-  const xCentre = pW * (wedge < 0 ? 0.42 : 0.56) + (y - yTop) * (wedge < 0 ? -0.30 : 0.16);
-  const x = xCentre + (Math.random() - 0.5) * pW * 0.16 * (0.4 + spread);
+  const xCentre = pW * (wedge < 0 ? 0.42 : 0.56) + (y - yTop) * (wedge < 0 ? -0.28 : 0.14);
+  const x = xCentre + (Math.random() - 0.5) * pW * 0.14 * (0.4 + spread);
   return {
     x: x,
     y: y,
-    vx: (Math.random() - 0.5) * 0.22,
-    vy: -(Math.random() * 0.16 + 0.04),
-    size: Math.random() * 0.9 + 0.35,
+    vx: (Math.random() - 0.5) * 0.20,
+    vy: -(Math.random() * 0.14 + 0.04),
+    size: Math.random() * 0.85 + 0.35,
     life: Math.random(),
-    lifeRate: Math.random() * 0.0022 + 0.0008
+    lifeRate: Math.random() * 0.0020 + 0.0008
   };
 }
 
 function drawParticlesStep() {
   if (!ctx || !particlesCanvas) return;
-
-  const active = particleIntensity > 0.02 && !REDUCED_MOTION.matches;
+  const active = SETTINGS.particles && SETTINGS.motion && particleIntensity > 0.02 && !REDUCED_MOTION.matches;
   const canvasOpacity = active ? Math.min(1, particleIntensity).toFixed(2) : '0';
   if (canvasOpacity !== particlesCanvas.dataset.opacity) {
     particlesCanvas.dataset.opacity = canvasOpacity;
@@ -1378,22 +1397,19 @@ function drawParticlesStep() {
   if (!active) return;
 
   ctx.clearRect(0, 0, pW, pH);
-  ctx.fillStyle = 'rgba(226, 232, 240, 0.55)';
-
+  ctx.fillStyle = 'rgba(232, 238, 248, 0.52)';
   for (let i = 0; i < particles.length; i++) {
     const p = particles[i];
     p.x += p.vx;
     p.y += p.vy;
     p.life += p.lifeRate;
-
     const fade = Math.sin(Math.max(0, Math.min(1, p.life)) * Math.PI);
     if (fade > 0.01) {
-      ctx.globalAlpha = fade * 0.28;
+      ctx.globalAlpha = fade * 0.26;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
       ctx.fill();
     }
-
     if (p.life >= 1 || p.y < pH * 0.70) particles[i] = spawnParticle(false);
   }
   ctx.globalAlpha = 1;
@@ -1411,230 +1427,237 @@ function startParticles() {
   requestAnimationFrame(particlesLoop);
 }
 
-/** Stop the dust field without tearing down its canvas. */
 function stopParticles() {
   particlesRunning = false;
   if (ctx && particlesCanvas) ctx.clearRect(0, 0, particlesCanvas.width, particlesCanvas.height);
 }
 
-// initParticles is called after first frame; startParticles() once booted.
+/* ══════════════════════════════════════════════════════════════════════════
+   12. LIVE OPEN-METEO WEATHER & GEOCODING (Never Fabricated)
+   ══════════════════════════════════════════════════════════════════════════ */
 
-/* ══════════════════════════════════════════════
-   PREVIEW STRIP (REMOVED)
-   ══════════════════════════════════════════════ */
+let weatherCoords = null;
+let weatherRefreshFn = null;
 
-/* ══════════════════════════════════════════════
-   WEATHER WIDGET
-   ══════════════════════════════════════════════ */
-function initWeather() {
+function formatTempDisplay(tempC) {
+  if (tempC === null || tempC === undefined || !isFinite(tempC)) return '--°' + (SETTINGS.tempUnit === 'F' ? 'F' : 'C');
+  if (SETTINGS.tempUnit === 'F') {
+    return Math.round((tempC * 9) / 5 + 32) + '°F';
+  }
+  return Math.round(tempC) + '°C';
+}
+
+function getWeatherIcon(code, isDay) {
+  const sunSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
+  const moonSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+  const cloudSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
+  const rainSvg = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="16" y1="13" x2="16" y2="21"/><line x1="8" y1="13" x2="8" y2="21"/><line x1="12" y1="15" x2="12" y2="23"/><path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/></svg>';
+  if (code === 0) return isDay ? sunSvg : moonSvg;
+  if (code >= 51 && code <= 99) return rainSvg;
+  return cloudSvg;
+}
+
+function renderWeatherDOM() {
   const weatherIcon = document.getElementById('weather-icon');
   const weatherTemp = document.getElementById('weather-temp');
-  if (!weatherIcon || !weatherTemp) return;
+  const weatherWidget = document.getElementById('weather-widget');
+  const drawerVal = document.getElementById('drawer-weather-val');
+  const drawerSub = document.getElementById('drawer-weather-sub');
+  const settingsStatus = document.getElementById('weather-settings-status');
 
-  function fetchWeather(lat, lon) {
-    const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true`;
-    fetch(url)
-      .then(res => res.json())
-      .then(data => {
-        if (data && data.current_weather) {
-          const temp = Math.round(data.current_weather.temperature);
-          const code = data.current_weather.weathercode;
-          weatherTemp.textContent = `${temp}°C`;
-          weatherIcon.innerHTML = getWeatherIcon(code, data.current_weather.is_day);
+  const txt = formatTempDisplay(telemetryState.weatherTempC);
+  if (weatherTemp) weatherTemp.textContent = txt;
+  if (drawerVal) drawerVal.textContent = txt;
+  if (drawerSub) drawerSub.textContent = telemetryState.weatherLabel;
+  if (weatherWidget) {
+    weatherWidget.title = telemetryState.weatherAvailable
+      ? ('Live weather: ' + txt + ' (' + telemetryState.weatherLabel + ') — click to refresh')
+      : ('Weather unavailable (' + telemetryState.weatherLabel + ') — configure city in Settings');
+  }
+  if (weatherIcon) {
+    weatherIcon.innerHTML = telemetryState.weatherAvailable
+      ? getWeatherIcon(telemetryState.weatherCode, telemetryState.weatherIsDay)
+      : getWeatherIcon(2, 0);
+  }
+  if (settingsStatus) {
+    settingsStatus.textContent = telemetryState.weatherAvailable
+      ? ('Live Open-Meteo reading: ' + txt + ' · ' + telemetryState.weatherLabel)
+      : ('Weather status: ' + telemetryState.weatherLabel + '. Enter a city or coordinates below if OS geolocation is unavailable.');
+  }
+  emit('telemetry', telemetryState);
+}
+
+function initWeather() {
+  function fallbackWeather(reason) {
+    telemetryState.weatherAvailable = false;
+    telemetryState.weatherTempC = null;
+    telemetryState.weatherLabel = reason || 'Unavailable';
+    renderWeatherDOM();
+  }
+
+  function fetchWeather(lat, lon, label) {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + encodeURIComponent(lat) + '&longitude=' + encodeURIComponent(lon) + '&current_weather=true';
+    return fetch(url)
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (data && data.current_weather && typeof data.current_weather.temperature === 'number') {
+          telemetryState.weatherAvailable = true;
+          telemetryState.weatherTempC = data.current_weather.temperature;
+          telemetryState.weatherCode = data.current_weather.weathercode;
+          telemetryState.weatherIsDay = data.current_weather.is_day;
+          telemetryState.weatherLabel = label || 'Live local';
+          renderWeatherDOM();
         } else {
-          fallbackWeather();
+          fallbackWeather('No data');
         }
       })
-      .catch(() => fallbackWeather());
+      .catch(function () { fallbackWeather('Offline'); });
   }
-
-  function fallbackWeather() {
-    weatherTemp.textContent = '--°C';
-    weatherIcon.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>';
-  }
-
-  function getWeatherIcon(code, isDay) {
-    const sunSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-      <circle cx="12" cy="12" r="4"/>
-      <line x1="12" y1="2" x2="12" y2="4"/><line x1="12" y1="20" x2="12" y2="22"/>
-      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
-      <line x1="2" y1="12" x2="4" y2="12"/><line x1="20" y1="12" x2="22" y2="12"/>
-      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-    </svg>`;
-    const moonSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
-    </svg>`;
-    const cloudSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/>
-    </svg>`;
-    const rainSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="16" y1="13" x2="16" y2="21"/><line x1="8" y1="13" x2="8" y2="21"/><line x1="12" y1="15" x2="12" y2="23"/>
-      <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>
-    </svg>`;
-    const snowSvg = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-      <line x1="16" y1="13" x2="16" y2="21"/><line x1="8" y1="13" x2="8" y2="21"/><line x1="12" y1="15" x2="12" y2="23"/>
-      <path d="M20 16.58A5 5 0 0 0 18 7h-1.26A8 8 0 1 0 4 15.25"/>
-    </svg>`;
-
-    if (code === 0) return isDay ? sunSvg : moonSvg;
-    if (code >= 1 && code <= 3) return cloudSvg;
-    if (code >= 45 && code <= 48) return cloudSvg;
-    if (code >= 51 && code <= 67) return rainSvg;
-    if (code >= 71 && code <= 77) return snowSvg;
-    if (code >= 80 && code <= 82) return rainSvg;
-    if (code >= 95) return rainSvg;
-    return cloudSvg;
-  }
-
-  // Location: browser geolocation first, then approximate IP-based location
-  // (desktop hosts usually have no geolocation permission prompt).
-  let coords = null;
 
   function locateByIP() {
     return fetch('https://ipapi.co/json/')
-      .then(res => res.json())
-      .then(d => {
-        if (d && typeof d.latitude === 'number') return { lat: d.latitude, lon: d.longitude };
+      .then(function (res) { return res.json(); })
+      .then(function (d) {
+        if (d && typeof d.latitude === 'number' && typeof d.longitude === 'number') {
+          return { lat: d.latitude, lon: d.longitude, label: d.city || 'Auto IP' };
+        }
         throw new Error('no ip location');
       });
   }
 
-  function locate() {
-    return new Promise((resolve, reject) => {
+  function locateAuto() {
+    if (SETTINGS.weatherLat && SETTINGS.weatherLon) {
+      const lat = parseFloat(SETTINGS.weatherLat);
+      const lon = parseFloat(SETTINGS.weatherLon);
+      if (isFinite(lat) && isFinite(lon)) {
+        return Promise.resolve({ lat: lat, lon: lon, label: SETTINGS.weatherCity || 'Saved location' });
+      }
+    }
+    return new Promise(function (resolve, reject) {
       if (!navigator.geolocation) { reject(new Error('no geolocation')); return; }
       navigator.geolocation.getCurrentPosition(
-        pos => resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        err => reject(err),
-        { timeout: 8000, maximumAge: 30 * 60 * 1000 }
+        function (pos) { resolve({ lat: pos.coords.latitude, lon: pos.coords.longitude, label: 'Device GPS' }); },
+        function (err) { reject(err); },
+        { timeout: 6000, maximumAge: 30 * 60 * 1000 }
       );
     }).catch(locateByIP);
   }
 
   function refresh() {
-    if (!navigator.onLine) { fallbackWeather(); return; }
-    (coords ? Promise.resolve(coords) : locate())
-      .then(c => { coords = c; fetchWeather(c.lat, c.lon); })
-      .catch(() => { console.warn('Location unavailable — weather disabled.'); fallbackWeather(); });
+    if (!navigator.onLine) { fallbackWeather('Offline'); return Promise.resolve(); }
+    return (weatherCoords ? Promise.resolve(weatherCoords) : locateAuto())
+      .then(function (c) {
+        weatherCoords = c;
+        return fetchWeather(c.lat, c.lon, c.label);
+      })
+      .catch(function () { fallbackWeather('Location needed'); });
   }
 
+  weatherRefreshFn = refresh;
   refresh();
-  setInterval(refresh, 30 * 60 * 1000);   // every 30 minutes
+  setInterval(refresh, 30 * 60 * 1000);
   window.addEventListener('online', refresh);
 }
 
+function setWeatherLocation(query) {
+  const q = String(query || '').trim();
+  if (!q) return Promise.resolve(false);
 
-// Remove CSS transition for auto mode (rAF drives opacity directly)
-layerA.style.transition = 'none';
-layerB.style.transition = 'none';
-
-/* ══════════════════════════════════════════════
-   CINEMATIC STARTUP SEQUENCE
-   ══════════════════════════════════════════════ */
-function runCinematicStartup() {
-  const engineAudio = document.getElementById('engine-audio');
-
-  // Attempt to play audio
-  const playAudio = () => {
-    // Check if src exists and is not just the empty page URL
-    if (engineAudio && engineAudio.getAttribute('src')) {
-      // Respect the saved volume/mute; the startup sound is not a reason to
-      // jump to full volume.
-      applyAudioSettings();
-      engineAudio.play().catch(e => {
-        console.warn("Autoplay blocked by browser. Audio will play on first click.");
-      });
+  const coordMatch = q.match(/^(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)$/);
+  if (coordMatch) {
+    const lat = parseFloat(coordMatch[1]);
+    const lon = parseFloat(coordMatch[2]);
+    if (lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180) {
+      saveSettings({ weatherCity: lat.toFixed(2) + ', ' + lon.toFixed(2), weatherLat: String(lat), weatherLon: String(lon) });
+      weatherCoords = { lat: lat, lon: lon, label: SETTINGS.weatherCity };
+      if (weatherRefreshFn) weatherRefreshFn();
+      return Promise.resolve(true);
     }
-  };
+  }
 
-  const triggerIgnitionVisuals = () => {
-    if (REDUCED_MOTION.matches) return;
-    // A single, restrained flare on the lamps. The previous version also added
-    // a perpetual 80 ms `engine-idle` shake, which re-rasterised the scene
-    // every frame and left every image edge permanently soft.
-    [layerA, layerB].forEach(layer => {
-      const hlImg = layer.querySelector('.headlight-img');
-      const svgHl = layer.querySelector('.svg-headlights');
-
-      if (hlImg) {
-        hlImg.style.opacity = '';
-        hlImg.classList.add('headlight-flare');
-        setTimeout(() => hlImg.classList.remove('headlight-flare'), 1200);
-      }
-      if (svgHl) {
-        svgHl.style.opacity = '';
-        svgHl.classList.add('headlight-flare');
-        setTimeout(() => svgHl.classList.remove('headlight-flare'), 1200);
-      }
-    });
-
-    const hud = document.getElementById('hud');
-    if (hud) {
-      hud.classList.remove('ui-glitch');
-      void hud.offsetWidth;
-      hud.classList.add('ui-glitch');
-      setTimeout(() => hud.classList.remove('ui-glitch'), 1500);
-    }
-  };
-
-  // 1. Initial delay
-  setTimeout(() => {
-    // 2. Play audio
-    playAudio();
-
-    // 3. Ignition flare & shake
-    triggerIgnitionVisuals();
-
-  }, 800);
+  return fetch('https://geocoding-api.open-meteo.com/v1/search?count=1&language=en&format=json&name=' + encodeURIComponent(q))
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      const hit = d && Array.isArray(d.results) && d.results[0];
+      if (!hit) return false;
+      const label = hit.name + (hit.country_code ? ', ' + hit.country_code : '');
+      saveSettings({ weatherCity: label, weatherLat: String(hit.latitude), weatherLon: String(hit.longitude) });
+      weatherCoords = { lat: hit.latitude, lon: hit.longitude, label: label };
+      if (weatherRefreshFn) weatherRefreshFn();
+      return true;
+    })
+    .catch(function () { return false; });
 }
 
-// runCinematicStartup is triggered by the drawer's Start engine action only —
-// never by a page load. See `startEngine()`.
+function clearWeatherLocation() {
+  saveSettings({ weatherCity: '', weatherLat: '', weatherLon: '' });
+  weatherCoords = null;
+  if (weatherRefreshFn) weatherRefreshFn();
+}
+
+function setTempUnit(unit) {
+  saveSettings({ tempUnit: unit === 'F' ? 'F' : 'C' });
+  renderWeatherDOM();
+}
 
 /* ══════════════════════════════════════════════════════════════════════════
-   PHASE 2 — SETTINGS, DEPTH CLOCK, PLAYBACK, PUBLIC API
-   ══════════════════════════════════════════════════════════════════════════
-   Kept in one place at the end of the engine so the boot path above stays
-   readable. Everything here is additive: with no saved settings and no ridge
-   data the wallpaper looks and behaves exactly as it did before.
+   13. CINEMATIC IGNITION SEQUENCE (Manual Trigger Only by Default)
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ── Settings store ────────────────────────────────────────────────────────
-   localStorage holds small preferences only. Imported images are blobs and
-   live in IndexedDB (see app.js) — putting a 4 MB wallpaper in localStorage
-   would blow the 5 MB quota and take the settings down with it. */
+function runCinematicStartup() {
+  startEngine();
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   14. PERSISTENT SETTINGS STORE, SCHEDULE PERSISTENCE & EVENT BUS
+   ══════════════════════════════════════════════════════════════════════════ */
 
 const SETTINGS_KEY = 'nightdrive.settings.v2';
+const SCHEDULE_KEY = 'nightdrive.schedule.v1';
 
 const DEFAULT_SETTINGS = {
-  // Clock
   clockVisible: true,
   clock24: true,
-  clockScale: 100,          // %
-  clockOpacity: 85,         // %
-  clockOffset: 0,           // % of viewport height
-  // Scene
-  mode: 'scenes',           // 'scenes' | 'custom'
-  useDesign: false,         // custom mode: whole wallpaper vs scene (bg+car)
+  clockScale: 100,
+  clockOpacity: 88,
+  clockOffset: 0,
+
+  mode: 'scenes',
+  useDesign: false,
   autoScene: true,
-  sceneId: 'day',           // used when autoScene is off
-  headlights: null,         // null = follow the period, true/false = override
+  sceneId: 'night',
+  activePack: 'cascade-overlook',
+  activeWallpaperId: '',
+  activeCarId: 'scene-default',
+  preserveCarOnSchedule: true,
+  manualResumeMode: 'untilReenabled',
+  scheduleBlendMins: 20,
+
+  headlights: null,
+  beamIntensity: 75,
   playback: true,
   transitionMs: 1600,
-  // Appearance
-  brightness: 100,          // % (app-level dimming)
+
+  brightness: 100,
   motion: true,
   particles: true,
-  // Audio
+
   volume: 70,
   muted: false,
-  startupEffect: 'manual',  // 'manual' | 'once' | 'always'
-  // Drawer
+  startupEffect: 'manual',
+  desktopMusicBar: true,
+
   drawerEnabled: true,
   drawerPinned: false,
-  // Custom scene framing
-  carFit: 'contain',
+
+  weatherCity: '',
+  weatherLat: '',
+  weatherLon: '',
+  tempUnit: 'C',
+
+  carFit: 'cover',
   carScale: 100,
-  carX: 50,
+  carX: 58,
   carY: 74,
   bgFit: 'cover',
   bgScale: 100,
@@ -1659,24 +1682,124 @@ function loadSettings() {
     if (!parsed || typeof parsed !== 'object') return base;
     Object.keys(base).forEach(function (k) {
       const v = parsed[k];
-      if (v === undefined || v === null) return;
+      if (v === undefined) return;
+      if (k === 'headlights' && (v === null || typeof v === 'boolean')) { base[k] = v; return; }
       if (typeof base[k] === 'boolean' && typeof v === 'boolean') base[k] = v;
       else if (typeof base[k] === 'number' && typeof v === 'number' && isFinite(v)) base[k] = v;
       else if (typeof base[k] === 'string' && typeof v === 'string') base[k] = v;
     });
   } catch (e) {
-    // Corrupt or unreadable storage must never stop the wallpaper booting.
     console.warn('[NIGHTDRIVE] settings unreadable, using defaults', e);
   }
   return base;
 }
 
 const SETTINGS = loadSettings();
+let headlightOverride = SETTINGS.headlights;
+
+function loadSavedSchedule() {
+  try {
+    if (typeof localStorage === 'undefined' || !localStorage) {
+      recomputePeriodEnds(SETTINGS.scheduleBlendMins);
+      return;
+    }
+    const raw = localStorage.getItem(SCHEDULE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const seenStarts = new Set();
+        PERIODS.forEach(function (p) {
+          const val = parsed[p.id];
+          if (typeof val === 'number' && val >= 0 && val < 1440 && !seenStarts.has(Math.round(val))) {
+            p.start = Math.round(val);
+            seenStarts.add(p.start);
+          }
+        });
+      }
+    }
+  } catch (e) { /* keep default hours */ }
+  recomputePeriodEnds(SETTINGS.scheduleBlendMins);
+}
+loadSavedSchedule();
+
+function saveScheduleHours(hoursMap) {
+  if (hoursMap && typeof hoursMap === 'object') {
+    const candidate = {};
+    const used = new Set();
+    let valid = true;
+    PERIODS.forEach(function (p) {
+      const nextStart = typeof hoursMap[p.id] === 'number' ? Math.round(hoursMap[p.id]) : p.start;
+      if (nextStart < 0 || nextStart >= 1440 || used.has(nextStart)) {
+        valid = false;
+      } else {
+        used.add(nextStart);
+        candidate[p.id] = nextStart;
+      }
+    });
+    if (!valid) return false;
+    PERIODS.forEach(function (p) { p.start = candidate[p.id]; });
+  }
+  recomputePeriodEnds(SETTINGS.scheduleBlendMins);
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage) {
+      const payload = {};
+      PERIODS.forEach(function (p) { payload[p.id] = p.start; });
+      localStorage.setItem(SCHEDULE_KEY, JSON.stringify(payload));
+    }
+  } catch (e) { /* ignore quota */ }
+  if (mode === 'auto') {
+    layersOpacity = [-1, -1];
+    startRaf();
+  }
+  emit('schedule', getScheduleSnapshot());
+  return true;
+}
+
+function resetScheduleHours() {
+  PERIODS.forEach(function (p) { p.start = p.defaultStart; });
+  saveSettings({ scheduleBlendMins: 20 });
+  recomputePeriodEnds(20);
+  try {
+    if (typeof localStorage !== 'undefined' && localStorage) localStorage.removeItem(SCHEDULE_KEY);
+  } catch (e) { /* ignore */ }
+  if (mode === 'auto') {
+    layersOpacity = [-1, -1];
+    startRaf();
+  }
+  emit('schedule', getScheduleSnapshot());
+}
+
+function getScheduleSnapshot() {
+  const nowM = minutesNow();
+  const activeNow = periodFromMinutes(nowM);
+  return {
+    auto: mode === 'auto',
+    blendMins: SETTINGS.scheduleBlendMins,
+    manualResumeMode: SETTINGS.manualResumeMode,
+    activeNowId: activeNow ? activeNow.id : 'night',
+    periods: PERIODS.map(function (p) {
+      return {
+        id: p.id,
+        label: p.label,
+        start: p.start,
+        end: p.end % 1440,
+        startHHMM: formatMinutesHHMM(p.start),
+        endHHMM: formatMinutesHHMM(p.end % 1440),
+        headlights: p.headlights
+      };
+    })
+  };
+}
 
 function saveSettings(patch) {
-  if (patch) Object.keys(patch).forEach(function (k) {
-    if (k in DEFAULT_SETTINGS) SETTINGS[k] = patch[k];
-  });
+  if (patch) {
+    Object.keys(patch).forEach(function (k) {
+      if (k in DEFAULT_SETTINGS) SETTINGS[k] = patch[k];
+    });
+  }
+  if (patch && 'scheduleBlendMins' in patch) {
+    recomputePeriodEnds(SETTINGS.scheduleBlendMins);
+  }
   try {
     if (typeof localStorage !== 'undefined' && localStorage) {
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(SETTINGS));
@@ -1690,13 +1813,20 @@ function saveSettings(patch) {
 
 function resetSettings() {
   Object.keys(DEFAULT_SETTINGS).forEach(function (k) { SETTINGS[k] = DEFAULT_SETTINGS[k]; });
+  headlightOverride = null;
+  activeSingleWallpaper = null;
+  activeStudioCar = null;
+  studioWallpaperOverrides = {};
+  resetScheduleHours();
   try {
     if (typeof localStorage !== 'undefined' && localStorage) localStorage.removeItem(SETTINGS_KEY);
-  } catch (e) { /* nothing else to do */ }
+  } catch (e) { /* ignore */ }
+  setCar(null);
+  setBackground(null);
+  applySavedAppearance();
+  setAutoScene(true);
   emit('settings', SETTINGS);
 }
-
-/* ── Tiny event bus (app.js subscribes; the engine never depends on it) ──── */
 
 const listeners = {};
 function on(evt, fn) {
@@ -1711,16 +1841,14 @@ function emit(evt, data) {
   });
 }
 
-/* ── Ridge data: measured skyline per scene ──────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   15. SKYLINE GEOMETRY & SKY-SAFE CLOCK CLAMPING (Never Clips Digits)
+   ══════════════════════════════════════════════════════════════════════════ */
 
 const RIDGES_URL = 'assets/ridges.json';
+const STUDIO_CATALOG_URL = 'assets/studio-catalog.json';
 let RIDGES = null;
 
-/**
- * Load the measured skylines. Failure is not fatal: without them the clock
- * simply sits in front of the scene at its default position, which is the
- * graceful fallback the brief asks for rather than a half-applied effect.
- */
 function loadRidges() {
   const xhr = new XMLHttpRequest();
   xhr.onload = function () {
@@ -1735,8 +1863,27 @@ function loadRidges() {
       } catch (e) { console.warn('[NIGHTDRIVE] ridge data invalid', e); }
     }
   };
-  xhr.onerror = function () { /* fallback: no occlusion */ };
+  xhr.onerror = function () {};
   xhr.open('GET', RIDGES_URL, true);
+  xhr.send();
+}
+
+function loadStudioCatalog() {
+  const xhr = new XMLHttpRequest();
+  xhr.onload = function () {
+    if (xhr.status >= 200 && xhr.status < 300) {
+      try {
+        const data = JSON.parse(xhr.responseText);
+        if (data && typeof data === 'object') {
+          STUDIO_CATALOG = data;
+          hydrateStudioStateFromSettings();
+          emit('catalog', STUDIO_CATALOG);
+        }
+      } catch (e) { console.warn('[NIGHTDRIVE] studio catalog invalid', e); }
+    }
+  };
+  xhr.onerror = function () {};
+  xhr.open('GET', STUDIO_CATALOG_URL, true);
   xhr.send();
 }
 
@@ -1746,13 +1893,12 @@ function ridgeFor(periodId) {
   return r && Array.isArray(r.ridge) && r.ridge.length > 1 ? r : null;
 }
 
-/** Linear interpolation of ridge height at normalised x. */
 function ridgeAt(ridge, x) {
   if (!ridge || !ridge.length) return 0.6;
   const clamped = Math.max(0, Math.min(1, x));
   for (let i = 0; i < ridge.length - 1; i++) {
-    const [x0, y0] = ridge[i];
-    const [x1, y1] = ridge[i + 1];
+    const x0 = ridge[i][0], y0 = ridge[i][1];
+    const x1 = ridge[i + 1][0], y1 = ridge[i + 1][1];
     if (clamped >= x0 && clamped <= x1) {
       const t = x1 === x0 ? 0 : (clamped - x0) / (x1 - x0);
       return y0 + (y1 - y0) * t;
@@ -1761,17 +1907,11 @@ function ridgeAt(ridge, x) {
   return ridge[ridge.length - 1][1];
 }
 
-/** CSS polygon describing everything below the skyline. */
 function ridgePolygon(ridge) {
   const pts = ridge.map(function (p) { return (p[0] * 100).toFixed(3) + '% ' + (p[1] * 100).toFixed(3) + '%'; });
   return 'polygon(0% 100%, ' + pts.join(', ') + ', 100% 100%)';
 }
 
-/**
- * The rectangle a `background-size: cover` plate actually occupies, so a
- * percentage clip-path lands on image pixels instead of element pixels at any
- * aspect ratio (a 3:2 window crops the sides, a 21:9 one crops top/bottom).
- */
 function plateRect(iw, ih, vw, vh, fx, fy) {
   const scale = Math.max(vw / iw, vh / ih);
   const w = iw * scale;
@@ -1779,11 +1919,6 @@ function plateRect(iw, ih, vw, vh, fx, fy) {
   return { left: (vw - w) * fx, top: (vh - h) * fy, width: w, height: h };
 }
 
-/**
- * The rectangle a `contain` fit occupies. Portrait windows show a tall plate
- * whole over a blurred backdrop, so the foreground copy has to use the same
- * rectangle or the occlusion lands in the wrong place.
- */
 function plateRectContain(iw, ih, vw, vh) {
   const scale = Math.min(vw / iw, vh / ih);
   const w = iw * scale;
@@ -1792,9 +1927,10 @@ function plateRectContain(iw, ih, vw, vh) {
 }
 
 function focusFor(periodId) {
-  const entry = SCENE_ASSETS[periodId];
-  if (!entry || !entry.focus) return [0.62, 0.74];
-  return entry.focus.map(function (v) { return parseFloat(v) / 100; });
+  const studioWp = activeSingleWallpaper || resolvePeriodStudioWallpaper(periodId);
+  const focusArr = (studioWp && studioWp.focus) || (SCENE_ASSETS[periodId] && SCENE_ASSETS[periodId].focus);
+  if (!focusArr) return [0.62, 0.74];
+  return focusArr.map(function (v) { return parseFloat(v) / 100; });
 }
 
 const fgA = document.querySelector('[data-fg="a"]');
@@ -1806,27 +1942,13 @@ const fgPeriods = { a: null, b: null };
 function fgForLayer(layer) { return layer === layerA ? fgA : (layer === layerB ? fgB : null); }
 
 function applyForegroundFor(layer, periodId) {
-  applyCarToLayer(layer);
+  applyCarToLayer(layer, periodId);
   const img = fgForLayer(layer);
   if (!img) return;
-  const key = layer === layerA ? 'a' : 'b';
-  const data = ridgeFor(periodId);
-  // No ridge, or a user-supplied wallpaper: nothing to occlude with.
-  if (!data || customBackdrop || SETTINGS.clockVisible === false) {
-    img.classList.remove('is-active');
-    img.removeAttribute('src');
-    fgPeriods[key] = null;
-    return;
-  }
-  const src = (SCENE_ASSETS[periodId] && SCENE_ASSETS[periodId].landscape[0]) || null;
-  if (!src) { img.classList.remove('is-active'); return; }
-  fgPeriods[key] = periodId;
-  if (img.getAttribute('src') !== src) img.src = src;
-  img.classList.add('is-active');
-  layoutForeground(img, periodId, layer);
-  if (img.complete !== true) {
-    img.addEventListener('load', function () { layoutForeground(img, periodId, layer); }, { once: true });
-  }
+  // Foreground occlusion is disabled so mountain silhouettes never cut clock digits.
+  img.classList.remove('is-active');
+  img.removeAttribute('src');
+  fgPeriods[layer === layerA ? 'a' : 'b'] = null;
 }
 
 function layoutForeground(img, periodId, layer) {
@@ -1838,15 +1960,12 @@ function layoutForeground(img, periodId, layer) {
   const vh = window.innerHeight;
   const f = focusFor(periodId);
   const contained = layer && layer.classList && layer.classList.contains('layer--contain');
-  const rect = contained
-    ? plateRectContain(iw, ih, vw, vh)
-    : plateRect(iw, ih, vw, vh, f[0], f[1]);
+  const rect = contained ? plateRectContain(iw, ih, vw, vh) : plateRect(iw, ih, vw, vh, f[0], f[1]);
   img.style.left = rect.left.toFixed(2) + 'px';
   img.style.top = rect.top.toFixed(2) + 'px';
   img.style.width = rect.width.toFixed(2) + 'px';
   img.style.height = rect.height.toFixed(2) + 'px';
   img.style.clipPath = ridgePolygon(data.ridge);
-  img.style.webkitClipPath = ridgePolygon(data.ridge);
 }
 
 function syncForegroundOpacity(a, b) {
@@ -1855,46 +1974,51 @@ function syncForegroundOpacity(a, b) {
 }
 
 /**
- * Place the clock against the active scene's skyline.
- *
- * `--clock-y` is the ridge height, and the clock's transform lifts its box by
- * 70 % of its own height, so the lower 30 % falls behind the silhouette. The
- * offset slider moves it in viewport units without changing that relationship.
+ * Place the sky clock centered horizontally and clamped strictly ABOVE the
+ * highest mountain/skyline silhouette across x ∈ [0.30, 0.70] so every digit
+ * remains 100% visible at 1366x768, 1920x1080, 1440p, 4K, and ultrawide.
  */
 function placeClock(periodId) {
   if (!clockEl) return;
-  const data = customBackdrop ? null : ridgeFor(periodId);
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
+  const vw = Math.max(320, window.innerWidth || 1920);
+  const vh = Math.max(320, window.innerHeight || 1080);
+  const scale = (SETTINGS.clockScale || 100) / 100;
 
-  if (!data) {
-    clockEl.style.setProperty('--clock-x', '35%');
-    clockEl.style.setProperty('--clock-y', '52%');
-    clockEl.classList.add('no-depth');
-    return;
+  // Estimate full date + tall numeral bounding height in px
+  const numPx = Math.min(148, Math.max(78, vw * 0.118)) * scale;
+  const datePx = Math.min(20, Math.max(14, vw * 0.0132)) * scale;
+  const halfBoxH = (numPx * 0.90 + datePx + 10) * 0.5;
+
+  let skylineNorm = 0.56;
+  const studioWp = activeSingleWallpaper || resolvePeriodStudioWallpaper(periodId);
+  if (customBackdrop) {
+    skylineNorm = 0.44;
+  } else if (studioWp && typeof studioWp.ridgeMinY === 'number') {
+    skylineNorm = studioWp.ridgeMinY;
+  } else {
+    const data = ridgeFor(periodId);
+    if (data && Array.isArray(data.ridge)) {
+      let minR = 1;
+      for (let x = 0.30; x <= 0.70; x += 0.04) {
+        minR = Math.min(minR, ridgeAt(data.ridge, x));
+      }
+      skylineNorm = minR;
+    }
   }
-  clockEl.classList.remove('no-depth');
 
-  const entry = SCENE_ASSETS[periodId] || {};
-  const imgSrc = entry.landscape && entry.landscape[0];
-  // The plate's own aspect decides the cover rectangle. Reading it from the
-  // loaded scene image keeps this correct for portrait plates too.
-  const sceneImg = (layerA && layerA.querySelector('.scene-img'));
-  const useScene = sceneImg && sceneImg.naturalWidth ? sceneImg : null;
-  const iw = useScene ? useScene.naturalWidth : (imgSrc ? 1376 : vw);
-  const ih = useScene ? useScene.naturalHeight : 768;
   const f = focusFor(periodId);
-  const contained = layerA && layerA.classList && layerA.classList.contains('layer--contain');
-  const rect = contained
-    ? plateRectContain(iw, ih, vw, vh)
-    : plateRect(iw, ih, vw, vh, f[0], f[1]);
+  const rect = plateRect(1376, 768, vw, vh, f[0], f[1]);
+  const skylineViewportY = customBackdrop ? (vh * skylineNorm) : (rect.top + skylineNorm * rect.height);
 
-  const cx = data.clock && typeof data.clock.x === 'number' ? data.clock.x : 0.35;
-  const x = rect.left + cx * rect.width;
-  const y = rect.top + ridgeAt(data.ridge, cx) * rect.height;
+  // Target aesthetic sky center (~22.5% from top, matching image-1.png), shifted
+  // by user offset, then clamped between top screen margin and skyline - 22px!
+  const desiredY = vh * 0.225 + (SETTINGS.clockOffset / 100) * vh;
+  const minSafeCenterY = 22 + halfBoxH;
+  const maxSafeCenterY = Math.max(minSafeCenterY, skylineViewportY - halfBoxH - 22);
+  const finalCenterY = Math.max(minSafeCenterY, Math.min(maxSafeCenterY, desiredY));
 
-  clockEl.style.setProperty('--clock-x', x.toFixed(1) + 'px');
-  clockEl.style.setProperty('--clock-y', (y + (SETTINGS.clockOffset / 100) * vh).toFixed(1) + 'px');
+  clockEl.style.setProperty('--clock-x', '50%');
+  clockEl.style.setProperty('--clock-y', finalCenterY.toFixed(1) + 'px');
 }
 
 const BRIGHT_PERIODS = { day: true, goldenHour: true, morning: true };
@@ -1906,44 +2030,43 @@ function applyClockChrome(periodId) {
 }
 
 function refreshDepth() {
-  const periodId = currentId || layerAId || (SETTINGS.sceneId || 'day');
-  [ [layerA, 'a'], [layerB, 'b'] ].forEach(function (pair) {
-    const layer = pair[0];
-    const key = pair[1];
-    if (!layer) return;
-    const img = fgForLayer(layer);
-    const pid = fgPeriods[key] || (layer === layerA ? layerAId : layerBId);
-    if (img && pid && img.classList.contains('is-active')) layoutForeground(img, pid, layer);
-  });
+  const periodId = currentId || layerAId || (SETTINGS.sceneId || 'night');
   placeClock(periodId);
   applyClockChrome(periodId);
 }
 
-/* ── Appearance from settings ───────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   16. APPEARANCE, AUDIO, HEADLIGHTS & STUDIO COMPOSITING ACTIONS
+   ══════════════════════════════════════════════════════════════════════════ */
 
 function applyClockSettings() {
   if (!clockEl) return;
   clockEl.classList.toggle('is-hidden', !SETTINGS.clockVisible);
   clockEl.style.setProperty('--clock-scale', String(SETTINGS.clockScale / 100));
   clockEl.style.setProperty('--clock-opacity', String(SETTINGS.clockOpacity / 100));
-  if (fgA) fgA.style.display = SETTINGS.clockVisible ? '' : 'none';
-  if (fgB) fgB.style.display = SETTINGS.clockVisible ? '' : 'none';
   updateHUD();
   refreshDepth();
 }
 
 function applyBrightness() {
-  // 40–110 % maps to 0.4–1.1; the CSS filter dims the photograph only.
   const level = Math.max(0.4, Math.min(1.1, SETTINGS.brightness / 100));
   document.documentElement.style.setProperty('--stage-brightness', level.toFixed(3));
+}
+
+function applyDesktopMusicBarVisibility() {
+  const bar = document.getElementById('stage-music-bar');
+  if (bar) bar.classList.toggle('is-hidden', SETTINGS.desktopMusicBar === false);
 }
 
 function applySavedAppearance() {
   applyClockSettings();
   applyBrightness();
   applyAudioSettings();
+  applyDesktopMusicBarVisibility();
   if (SETTINGS.mode === 'scenes' && SETTINGS.autoScene === false) {
-    const p = periodById(SETTINGS.sceneId);
+    mode = 'manual';
+    stopRaf();
+    const p = periodById(SETTINGS.sceneId) || periodById('night');
     if (p) showPeriodManual(p, true);
   }
   if (SETTINGS.playback === false) setPlayback(false);
@@ -1951,14 +2074,13 @@ function applySavedAppearance() {
   emit('ready', null);
 }
 
-/* ── Audio ──────────────────────────────────────────────────────────────── */
-
 function engineAudioEl() { return document.getElementById('engine-audio'); }
 
 function applyAudioSettings() {
+  const vol = SETTINGS.muted ? 0 : Math.max(0, Math.min(1, SETTINGS.volume / 100));
   const audio = engineAudioEl();
-  if (!audio) return;
-  audio.volume = SETTINGS.muted ? 0 : Math.max(0, Math.min(1, SETTINGS.volume / 100));
+  if (audio) audio.volume = vol;
+  if (musicAudioEl) musicAudioEl.volume = vol;
 }
 
 function setVolume(pct) {
@@ -1966,8 +2088,6 @@ function setVolume(pct) {
   saveSettings({ volume: value });
   if (SETTINGS.muted && value > 0) saveSettings({ muted: false });
   applyAudioSettings();
-  // The Windows host owns the real system mixer; a browser cannot touch it, so
-  // this is only sent when a host has actually answered us.
   if (PLATFORM.webview2 && nativeHostActive) postToHost('set_volume:' + value);
   emit('volume', value);
 }
@@ -1978,8 +2098,6 @@ function setMuted(muted) {
   if (PLATFORM.webview2 && nativeHostActive) postToHost('set_mute:' + (muted ? 1 : 0));
   emit('muted', !!muted);
 }
-
-/* ── Playback: pause the scene, keep the clock ──────────────────────────── */
 
 function setPlayback(playing) {
   saveSettings({ playback: !!playing });
@@ -1993,37 +2111,71 @@ function setPlayback(playing) {
   emit('playback', !!playing);
 }
 
-/* ── Headlights override ────────────────────────────────────────────────── */
-
-let headlightOverride = null;
-
 function setHeadlights(value) {
-  // value: true | false | null (follow the period)
   headlightOverride = value;
   saveSettings({ headlights: value });
-  const layerList = [layerA, layerB];
-  layerList.forEach(function (layer) {
+  [layerA, layerB].forEach(function (layer) {
     if (!layer) return;
-    const op = value === null ? 0 : (value ? HEADLIGHT_OPACITY : 0);
-    if (value !== null) setHeadlightOpacity(layer, op);
+    const pid = layer.dataset.periodId || currentId || 'night';
+    const op = headlightOpacityFor(pid);
+    setHeadlightOpacity(layer, op);
   });
+  setHeadlightMix(headlightOpacityFor(currentId || 'night') / HEADLIGHT_OPACITY);
+  drawStudioCarBeams();
   emit('headlights', value);
 }
 
-/* ── Custom scene: car layer, background, complete design ───────────────── */
+function setBeamIntensity(pct) {
+  const val = Math.max(20, Math.min(100, Math.round(pct)));
+  saveSettings({ beamIntensity: val });
+  setHeadlights(headlightOverride);
+}
 
-let customCar = null;      // { src, fit, x, y, scale, opacity }
-let customBackdrop = null; // { src, fit, ... }
-let customDesign = null;   // { src }
+/* ── Car Studio & Custom Layer Compositing ──────────────────────────────── */
 
-function applyCarToLayer(layer) {
+let customCar = null;
+let customBackdrop = null;
+let customDesign = null;
+
+function canCompositeCarOnLayer(layer) {
+  if (!customCar || !customCar.src) return false;
+  // Direct custom imports or explicit override (`forceComposite: true`) always composite;
+  // Studio catalog cars composite ONLY onto car-free (`supportsCarOverlay: true`) plates
+  // so two vehicles are never stacked on top of Cascade Overlook's photographed car.
+  if (customCar.forceComposite) return true;
+  if (customBackdrop) return true;
+  return !!(layer && layer.dataset.supportsCar === '1');
+}
+
+function applyCarToLayer(layer, periodId) {
   if (!layer) return;
   const img = layer.querySelector('.car-img');
   if (!img) return;
-  if (!customCar || !customCar.src) return;   // fillLayer cleared it already
-  img.style.setProperty('--car-fit', customCar.fit === 'cover' ? 'cover' : 'contain');
-  img.classList.add('is-loaded');
+  if (!canCompositeCarOnLayer(layer)) {
+    if (layer.dataset.customCar === '1') {
+      img.removeAttribute('src');
+      img.classList.remove('is-loaded');
+      img.style.transform = '';
+      img.style.filter = '';
+      layer.classList.remove('layer--has-car');
+      layer.dataset.customCar = '0';
+    }
+    return;
+  }
+
+  layer.dataset.customCar = '1';
+  img.style.setProperty('--car-fit', customCar.fit === 'contain' ? 'contain' : 'cover');
+  const posValue = customCar.stageLocked
+    ? (layer.style.getPropertyValue('--focus') || '58% 68%')
+    : (customCar.x + '% ' + customCar.y + '%');
+  img.style.setProperty('--car-position', posValue);
+  img.style.transform = customCar.scale && customCar.scale !== 100
+    ? ('scale(' + (customCar.scale / 100) + ')')
+    : '';
+  img.style.transformOrigin = '68% 72%';
+  img.style.filter = carPeriodFilter(periodId || layer.dataset.periodId || currentId);
   if (img.getAttribute('src') !== customCar.src) img.src = customCar.src;
+  img.classList.add('is-loaded');
   layer.classList.add('layer--has-car');
 }
 
@@ -2034,25 +2186,154 @@ function setCar(asset, opts) {
     fit: o.fit || SETTINGS.carFit,
     scale: o.scale || SETTINGS.carScale,
     x: typeof o.x === 'number' ? o.x : SETTINGS.carX,
-    y: typeof o.y === 'number' ? o.y : SETTINGS.carY
+    y: typeof o.y === 'number' ? o.y : SETTINGS.carY,
+    stageLocked: !!o.stageLocked,
+    forceComposite: o.forceComposite !== false
   } : null;
+  if (!customCar) activeStudioCar = null;
   [layerA, layerB].forEach(function (layer) {
-    if (!layer) return;
-    const img = layer.querySelector('.car-img');
-    if (!img) return;
-    if (customCar) {
-      applyCarToLayer(layer);
-      img.style.setProperty('--car-position', customCar.x + '% ' + customCar.y + '%');
-      img.style.transform = 'scale(' + (customCar.scale / 100) + ')';
-      img.style.transformOrigin = customCar.x + '% ' + customCar.y + '%';
-    } else {
-      img.removeAttribute('src');
-      img.classList.remove('is-loaded');
-      img.style.transform = '';
-      layer.classList.remove('layer--has-car');
-    }
+    applyCarToLayer(layer, layer ? layer.dataset.periodId : currentId);
   });
+  drawStudioCarBeams();
   emit('car', customCar);
+}
+
+function selectStudioCar(carId, opts) {
+  const o = opts || {};
+  if (!STUDIO_CATALOG || !Array.isArray(STUDIO_CATALOG.cars)) return false;
+  const entry = STUDIO_CATALOG.cars.find(function (c) { return c.id === carId; });
+  if (!entry || !entry.overlaySrc) {
+    activeStudioCar = null;
+    saveSettings({ activeCarId: 'scene-default' });
+    setCar(null);
+    return true;
+  }
+
+  activeStudioCar = entry;
+  saveSettings({ activeCarId: entry.id });
+
+  // Coherent compositing guarantee: if the active pack is an integrated-car pack
+  // (Cascade Overlook) and no car-free wallpaper is active, automatically switch
+  // to the matching Scenic Touring car-free pack when requested (`autoSwitchPack !== false`)
+  // so two cars never stack!
+  const curSupports = activeSingleWallpaper
+    ? activeSingleWallpaper.supportsCarOverlay
+    : (SETTINGS.activePack === 'scenic-touring');
+
+  if (!curSupports && !customBackdrop && o.autoSwitchPack !== false) {
+    activeSingleWallpaper = null;
+    saveSettings({ activePack: 'scenic-touring', activeWallpaperId: '' });
+  }
+
+  customCar = {
+    src: entry.overlaySrc,
+    fit: 'cover',
+    scale: SETTINGS.carScale || 100,
+    x: SETTINGS.carX || 58,
+    y: SETTINGS.carY || 74,
+    stageLocked: true,
+    forceComposite: false
+  };
+
+  reloadActiveScenes();
+  emit('car', customCar);
+  return true;
+}
+
+function useWallpaperPack(packId) {
+  if (packId !== 'cascade-overlook' && packId !== 'scenic-touring') return false;
+  activeSingleWallpaper = null;
+  customBackdrop = null;
+  setBackground(null);
+
+  // If switching back to Cascade Overlook (which has an integrated Challenger),
+  // clear any transparent Car Studio overlay unless user explicitly re-picks one.
+  if (packId === 'cascade-overlook') {
+    activeStudioCar = null;
+    customCar = null;
+    saveSettings({ activePack: packId, activeWallpaperId: '', activeCarId: 'scene-default', mode: 'scenes' });
+  } else {
+    saveSettings({ activePack: packId, activeWallpaperId: '', mode: 'scenes' });
+  }
+
+  reloadActiveScenes();
+  emit('pack', packId);
+  return true;
+}
+
+function applyStudioWallpaper(wp, opts) {
+  if (!wp || !wp.src) return false;
+  const o = opts || {};
+  customBackdrop = null;
+  setBackground(null);
+
+  activeSingleWallpaper = wp;
+  const targetPeriod = periodById(wp.period) ? wp.period : (currentId || 'night');
+
+  // Respect coherent car compositing: never overlay a second car onto an integrated-car scene.
+  if (!wp.supportsCarOverlay && activeStudioCar) {
+    // Keep activeStudioCar remembered if preserveCarOnSchedule is on, while hiding
+    // it cleanly on this incompatible scene (`canCompositeCarOnLayer` returns false).
+  }
+
+  saveSettings({
+    mode: 'scenes',
+    autoScene: o.keepAuto ? SETTINGS.autoScene : false,
+    sceneId: targetPeriod,
+    activeWallpaperId: wp.id || ''
+  });
+
+  if (!o.keepAuto) {
+    mode = 'manual';
+    manualOriginScheduleId = (periodFromMinutes(minutesNow()) || {}).id || null;
+    stopRaf();
+  }
+
+  assetsCache = {};
+  assetsReady = {};
+  const p = periodById(targetPeriod) || PERIODS[4];
+  showPeriodManual(p, !!o.instant);
+  emit('wallpaper', wp);
+  emit('scene', { auto: mode === 'auto', id: p.id });
+  return true;
+}
+
+function reloadActiveScenes() {
+  assetsCache = {};
+  assetsReady = {};
+  if (mode === 'auto') {
+    layerAId = null;
+    layerBId = null;
+    layersOpacity = [-1, -1];
+    startRaf();
+  } else {
+    const p = periodById(currentId || SETTINGS.sceneId || 'night');
+    if (p) showPeriodManual(p, true);
+  }
+}
+
+function hydrateStudioStateFromSettings() {
+  if (!STUDIO_CATALOG) return;
+  if (SETTINGS.activeCarId && SETTINGS.activeCarId !== 'scene-default') {
+    const foundCar = (STUDIO_CATALOG.cars || []).find(function (c) { return c.id === SETTINGS.activeCarId; });
+    if (foundCar && foundCar.overlaySrc) {
+      activeStudioCar = foundCar;
+      customCar = {
+        src: foundCar.overlaySrc,
+        fit: 'cover',
+        scale: SETTINGS.carScale || 100,
+        x: SETTINGS.carX || 58,
+        y: SETTINGS.carY || 74,
+        stageLocked: true,
+        forceComposite: false
+      };
+    }
+  }
+  if (SETTINGS.activeWallpaperId) {
+    const foundWp = (STUDIO_CATALOG.wallpapers || []).find(function (w) { return w.id === SETTINGS.activeWallpaperId; });
+    if (foundWp) activeSingleWallpaper = foundWp;
+  }
+  reloadActiveScenes();
 }
 
 function setBackground(asset, opts) {
@@ -2074,11 +2355,7 @@ function setBackground(asset, opts) {
     el.style.setProperty('--bg-scale', String(customBackdrop.scale / 100));
     el.style.setProperty('--bg-brightness', String(customBackdrop.brightness / 100));
     if (stageEl) stageEl.classList.add('is-custom');
-    // An arbitrary photograph can be bright anywhere; the stronger halo is the
-    // safe default, and the clock's own opacity control does the rest.
     if (clockEl) clockEl.classList.add('is-bright');
-    document.body.classList.remove('scene-bright');
-    // The built-in skyline no longer describes what is on screen.
     refreshDepth();
   } else {
     el.removeAttribute('src');
@@ -2091,27 +2368,18 @@ function setBackground(asset, opts) {
 function setDesign(asset) {
   setBackground(asset && asset.src ? { src: asset.src } : null, { fit: 'cover', scale: 100, x: 50, y: 50, brightness: 100 });
   customDesign = asset || null;
-  if (customDesign) {
-    saveSettings({ mode: 'custom' });
-  } else {
-    saveSettings({ mode: 'scenes' });
-  }
+  saveSettings({ mode: customDesign ? 'custom' : 'scenes' });
   emit('design', customDesign);
 }
 
-/* ── Engine start ───────────────────────────────────────────────────────── */
+/* ── Engine Start ───────────────────────────────────────────────────────── */
 
-/**
- * The deliberate, user-requested engine start. This is the only path that
- * plays the ignition sound or shakes anything — a wallpaper refresh never
- * calls it unless the saved preference explicitly says "every load".
- */
 function startEngine(opts) {
   const silent = opts && opts.silent;
   const audio = engineAudioEl();
   if (audio && !silent) {
     audio.volume = SETTINGS.muted ? 0 : Math.max(0, Math.min(1, SETTINGS.volume / 100));
-    try { audio.currentTime = 0; } catch (e) { /* not seekable yet */ }
+    try { audio.currentTime = 0; } catch (e) { /* ignore */ }
     const p = audio.play();
     if (p && p.catch) p.catch(function () { emit('audio-blocked', null); });
   }
@@ -2135,7 +2403,7 @@ function startEngine(opts) {
     clockEl.classList.remove('clock-start');
     void clockEl.offsetWidth;
     clockEl.classList.add('clock-start');
-    setTimeout(function () { clockEl.classList.remove('clock-start'); }, 1800);
+    setTimeout(function () { clockEl.classList.remove('clock-start'); }, 1400);
   }
   emit('engine', { animated: true });
 }
@@ -2147,54 +2415,60 @@ function maybeAutoStartup() {
     let seen = false;
     try { seen = sessionStorage.getItem('nightdrive.started') === '1'; } catch (e) { seen = false; }
     if (!seen) {
-      try { sessionStorage.setItem('nightdrive.started', '1'); } catch (e) { /* private mode */ }
+      try { sessionStorage.setItem('nightdrive.started', '1'); } catch (e) {}
       startEngine();
     }
   }
-  // 'manual' (the default): do nothing. The drawer has a Start engine button.
 }
 
-/* ── Scene control ──────────────────────────────────────────────────────── */
+/* ── Scene & Schedule Controls ──────────────────────────────────────────── */
 
 function setAutoScene(enabled) {
-  saveSettings({ autoScene: !!enabled });
+  activeSingleWallpaper = null;
+  manualOriginScheduleId = null;
   if (enabled) {
+    saveSettings({ autoScene: true, activeWallpaperId: '', mode: 'scenes' });
+    setBackground(null);
     mode = 'auto';
     setModeAuto();
   } else {
+    const keepId = currentId || layerAId || SETTINGS.sceneId || 'night';
+    saveSettings({ autoScene: false, sceneId: keepId });
     mode = 'manual';
+    manualOriginScheduleId = (periodFromMinutes(minutesNow()) || {}).id || null;
     stopRaf();
-    const p = periodById(currentId || SETTINGS.sceneId || 'day');
+    const p = periodById(keepId);
     if (p) showPeriodManual(p, true);
   }
-  emit('scene', { auto: mode === 'auto', id: currentId });
+  emit('scene', { auto: mode === 'auto', id: currentId || layerAId || SETTINGS.sceneId });
 }
 
 function stepScene(direction) {
+  activeSingleWallpaper = null;
   const order = PERIODS.map(function (p) { return p.id; });
-  const id = currentId || layerAId || SETTINGS.sceneId;
+  const id = currentId || layerAId || SETTINGS.sceneId || 'night';
   const idx = Math.max(0, order.indexOf(id));
   const next = order[(idx + (direction || 1) + order.length) % order.length];
-  const p = periodById(next);
-  if (!p) return;
-  saveSettings({ autoScene: false, sceneId: next });
-  mode = 'manual';
-  stopRaf();
-  showPeriodManual(p, false);
-  emit('scene', { auto: false, id: next });
+  setScene(next);
 }
 
 function setScene(id) {
   const p = periodById(id);
   if (!p) return;
-  saveSettings({ autoScene: false, sceneId: id });
+  activeSingleWallpaper = null;
+  if (!SETTINGS.preserveCarOnSchedule && activeStudioCar) {
+    activeStudioCar = null;
+    customCar = null;
+    saveSettings({ activeCarId: 'scene-default' });
+  }
+  saveSettings({ autoScene: false, sceneId: id, activeWallpaperId: '', mode: 'scenes' });
+  setBackground(null);
   mode = 'manual';
+  manualOriginScheduleId = (periodFromMinutes(minutesNow()) || {}).id || null;
   stopRaf();
   showPeriodManual(p, false);
   emit('scene', { auto: false, id: id });
 }
-
-/* ── Visibility / sleep ─────────────────────────────────────────────────── */
 
 document.addEventListener('visibilitychange', function () {
   if (document.hidden) {
@@ -2218,19 +2492,50 @@ function layoutForegroundBoth() {
   if (fgB && fgPeriods.b) layoutForeground(fgB, fgPeriods.b, layerB);
 }
 
-/* ── Exit ───────────────────────────────────────────────────────────────── */
-
 function exitApp() {
-  // Native hosts close their own window; a browser tab cannot be closed unless
-  // it was opened by script, so say so instead of pretending it worked.
   if (PLATFORM.tauri && window.__TAURI__ && window.__TAURI__.window) {
-    try { window.__TAURI__.window.getCurrent().close(); return; } catch (e) { /* fall through */ }
+    try { window.__TAURI__.window.getCurrent().close(); return; } catch (e) {}
   }
   if (postToHost('quit')) return;
-  window.close();
-  setTimeout(function () {
-    emit('exit-blocked', null);
-  }, 120);
+  if (typeof window.close === 'function') window.close();
+  setTimeout(function () { emit('exit-blocked', null); }, 120);
+}
+
+/* ── Boot Sequence ──────────────────────────────────────────────────────── */
+
+function boot() {
+  const initM = minutesNow();
+  const initBlend = computeBlend(initM);
+
+  layerAId = initBlend.from;
+  layerBId = initBlend.to;
+  currentId = initBlend.to;
+
+  return Promise.all([
+    ensureLayerPopulated(layerA, initBlend.from),
+    ensureLayerPopulated(layerB, initBlend.to)
+  ]).then(function () {
+    logToHost('6. First actual engine frame (assets fetched and painted)');
+    if (PLATFORM.webview2) {
+      window.chrome.webview.postMessage(JSON.stringify({ action: 'hide_fallback' }));
+    }
+
+    updateHUD();
+    clockTimer = setInterval(updateHUD, CLOCK_MS);
+    logToHost('7. Essential widgets becoming visible');
+
+    initBattery();
+    initWeather();
+    initParticles();
+    startParticles();
+    logToHost('8. Optional features becoming ready');
+
+    if (SETTINGS.autoScene !== false) {
+      setModeAuto();
+    }
+    applySavedAppearance();
+    maybeAutoStartup();
+  });
 }
 
 /* ── Public API consumed by app.js ──────────────────────────────────────── */
@@ -2251,23 +2556,48 @@ window.ND = {
       playing: SETTINGS.playback,
       headlights: headlightOverride,
       clock24: SETTINGS.clock24,
-      hasRidges: !!RIDGES
+      hasRidges: !!RIDGES,
+      activePack: SETTINGS.activePack,
+      activeWallpaper: activeSingleWallpaper,
+      activeCar: activeStudioCar
     };
   },
+  catalog: function () { return STUDIO_CATALOG; },
+  telemetry: function () { return telemetryState; },
+  mediaState: function () { return MEDIA; },
+  getSchedule: getScheduleSnapshot,
+  saveScheduleHours: saveScheduleHours,
+  resetScheduleHours: resetScheduleHours,
+  formatMinutesHHMM: formatMinutesHHMM,
+  parseHHMMToMinutes: parseHHMMToMinutes,
   setScene: setScene,
   stepScene: stepScene,
   setAutoScene: setAutoScene,
   setHeadlights: setHeadlights,
+  setBeamIntensity: setBeamIntensity,
   setPlayback: setPlayback,
   setVolume: setVolume,
   setMuted: setMuted,
   applyAudioSettings: applyAudioSettings,
   applyClockSettings: applyClockSettings,
   applyBrightness: applyBrightness,
+  applyDesktopMusicBarVisibility: applyDesktopMusicBarVisibility,
   placeClock: placeClock,
   setCar: setCar,
+  selectStudioCar: selectStudioCar,
+  useWallpaperPack: useWallpaperPack,
+  applyStudioWallpaper: applyStudioWallpaper,
   setBackground: setBackground,
   setDesign: setDesign,
+  mediaPlayPause: mediaPlayPause,
+  mediaNext: mediaNext,
+  mediaPrev: mediaPrev,
+  mediaSeek: mediaSeek,
+  loadLocalAudio: loadLocalAudio,
+  refreshWeather: function () { return weatherRefreshFn ? weatherRefreshFn() : Promise.resolve(); },
+  setWeatherLocation: setWeatherLocation,
+  clearWeatherLocation: clearWeatherLocation,
+  setTempUnit: setTempUnit,
   startEngine: startEngine,
   exit: exitApp,
   openSystemSettings: openSystemSettings,
@@ -2277,9 +2607,11 @@ window.ND = {
   notify: function (msg) { emit('toast', msg); }
 };
 
-// Start the ridge request first so it overlaps the plate decode, then boot.
-// Both are deferred to the end of the file so every binding above exists.
+if (layerA) layerA.style.transition = 'none';
+if (layerB) layerB.style.transition = 'none';
+
 loadRidges();
+loadStudioCatalog();
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', boot, { once: true });
 } else {

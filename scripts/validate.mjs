@@ -60,7 +60,7 @@ console.log('Service worker (offline support)');
 const sw = readFileSync(join(engine, 'sw.js'), 'utf8');
 try { new vm.Script(sw, { filename: 'sw.js' }); ok('sw.js parses'); } catch (e) { fail('sw.js syntax: ' + e.message); }
 const cacheName = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1];
-check(cacheName === 'nightdrive-v1.7.0', `cache name is ${cacheName || 'missing'}`);
+check(cacheName === 'nightdrive-v3.0.0', `cache name is ${cacheName || 'missing'}`);
 check(/serviceWorker/.test(html) && /register\(\s*['"]sw\.js['"]/.test(html), 'index.html registers the service worker');
 
 const preList = sw.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
@@ -106,12 +106,15 @@ if (existsSync(csprojPath)) {
     'published host copies the complete engine directory');
   for (const f of ['App.xaml', 'App.xaml.cs', 'MainWindow.xaml', 'MainWindow.xaml.cs',
                    'BatteryHelper.cs', 'ConnectivityHelper.cs', 'DesktopInteraction.cs',
-                   'TrayIconHelper.cs', 'WallpaperHelper.cs', 'app.manifest']) {
+                   'MediaSessionHelper.cs', 'TrayIconHelper.cs', 'WallpaperHelper.cs', 'app.manifest']) {
     check(existsSync(join(win, f)), f);
   }
   const mw = readFileSync(join(win, 'MainWindow.xaml.cs'), 'utf8');
   const desktopInteraction = readFileSync(join(win, 'DesktopInteraction.cs'), 'utf8');
   const connectivity = readFileSync(join(win, 'ConnectivityHelper.cs'), 'utf8');
+  const mediaHelper = readFileSync(join(win, 'MediaSessionHelper.cs'), 'utf8');
+  check(/GlobalSystemMediaTransportControlsSessionManager/.test(mediaHelper) && /media:toggle/.test(connectivity),
+    'Windows SMTC media session helper and WebView2 transport bridge are wired');
   check(/engine/.test(mw) && /index\.html/.test(mw), 'host loads engine/index.html');
   check(/RegisterHotKey/.test(desktopInteraction) && /HWND_TOPMOST/.test(desktopInteraction) &&
         /RememberDesktopParent/.test(desktopInteraction),
@@ -126,6 +129,44 @@ if (existsSync(csprojPath)) {
     'DOMContentLoaded subscription precedes Navigate');
   check(/drawbridge message/.test(connectivity) && /TryGetWebMessageAsString/.test(connectivity),
     'native bridge logs and parses page messages');
+
+  // C# cannot overload methods by accessibility or extern modifier alone, and
+  // UseWPF + UseWindowsForms + ImplicitUsings makes unqualified MessageBox
+  // ambiguous; catch both on Linux before Windows CI runs.
+  const csMethodDupes = [];
+  const csAmbiguousRefs = [];
+  const csFiles = ['App.xaml.cs', 'MainWindow.xaml.cs', 'BatteryHelper.cs',
+                   'ConnectivityHelper.cs', 'DesktopInteraction.cs',
+                   'MediaSessionHelper.cs', 'TrayIconHelper.cs', 'WallpaperHelper.cs'];
+  const methodDeclRe = /\b(?:public|private|protected|internal)\s+(?:(?:static|extern|async|override|virtual|partial|unsafe)\s+)*(?!delegate\b)[\w.<>?\[\]]+\s+(\w+)\s*\(([^)]*)\)\s*(?:;|\{|=>)/g;
+  for (const f of csFiles) {
+    const src = readFileSync(join(win, f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '');
+    const seen = new Set();
+    for (const [, name, rawParams] of src.matchAll(methodDeclRe)) {
+      const paramSig = rawParams.trim() === '' ? '' : rawParams.split(',').map((p) => {
+        const tokens = p.replace(/\[[^\]]*\]/g, '').replace(/=.*$/, '').trim().split(/\s+/);
+        return tokens.slice(0, -1).join(' ');
+      }).join(',');
+      const sig = `${name}(${paramSig})`;
+      if (seen.has(sig)) csMethodDupes.push(`${f}: ${sig}`);
+      seen.add(sig);
+    }
+    if (/\busing\s+System\.Windows\s*;/.test(src) &&
+        !/\busing\s+MessageBox\s*=/.test(src) &&
+        /(?<![.\w])MessageBox\s*\./.test(src)) {
+      csAmbiguousRefs.push(`${f}: unqualified MessageBox`);
+    }
+  }
+  check(csMethodDupes.length === 0,
+    csMethodDupes.length
+      ? `duplicate C# method signature(s): ${csMethodDupes.join('; ')}`
+      : 'no duplicate C# method signatures across Windows host');
+  check(csAmbiguousRefs.length === 0,
+    csAmbiguousRefs.length
+      ? `ambiguous WPF/WinForms reference(s): ${csAmbiguousRefs.join('; ')}`
+      : 'no ambiguous WPF/WinForms MessageBox references');
 }
 
 console.log('Scene image quality');
@@ -257,8 +298,9 @@ console.log('Depth clock data');
     const spans = ids.map((id) => Math.max(...ridges[id].ridge.map((p) => p[1])));
     check(Math.max(...spans) > 0.4, `skylines reach below the clock (lowest ridge ${Math.max(...spans).toFixed(2)})`);
   }
-  // The layer stack is what makes the effect work: clock above the scene,
-  // foreground above the clock, HUD above the foreground.
+  // Reference redesign keeps every clock digit 100% visible above the skyline:
+  // foreground occluder is disabled by default (.foreground.is-depth-off), clock
+  // sits cleanly in the sky (z-index 12), and the taskbar-safe HUD dock sits at 15.
   const z = (sel) => {
     const re = new RegExp('\\' + sel + '\\s*\\{[^}]*?z-index:\\s*(\\d+)');
     const m = css.match(re);
@@ -267,10 +309,41 @@ console.log('Depth clock data');
   const zClock = z('.clock');
   const zFg = z('.foreground');
   const zHud = z('.hud');
-  check(zClock === 5 && zFg === 10 && zHud === 15,
-    `clock (${zClock}) < foreground (${zFg}) < hud (${zHud})`);
-  check(/\.clock \{[^}]*translate\(-50%, -70%\)/.test(css) || /translate\(-50%, -70%\)/.test(css),
-    'clock box is lifted by 70 % so its foot sits behind the ridge');
+  check(zClock === 12 && zFg === 10 && zHud === 15,
+    `unclipped sky clock (${zClock}) > foreground (${zFg}) and hud (${zHud}) above stage`);
+  check(/\.foreground\.is-depth-off\s*\{\s*display:\s*none/.test(css) && /class="foreground is-depth-off"/.test(html),
+    'foreground occluder is disabled by default so silhouettes never cut clock digits');
+  check(/--taskbar-safe:\s*\d+px/.test(css),
+    'HUD and drawer reserve taskbar-safe clearance');
+
+  // Validate Studio Catalog, Scenic Touring 4:4:4 plates, and RGBA Car Studio PNGs
+  const studioCatPath = join(engine, 'assets/studio-catalog.json');
+  check(existsSync(studioCatPath), 'assets/studio-catalog.json exists');
+  if (existsSync(studioCatPath)) {
+    const cat = JSON.parse(readFileSync(studioCatPath, 'utf8'));
+    check(Array.isArray(cat.wallpapers) && cat.wallpapers.length >= 12,
+      `studio catalog ships ${cat.wallpapers.length} wallpapers`);
+    check(Array.isArray(cat.cars) && cat.cars.length >= 4,
+      `car studio ships ${cat.cars.length} vehicle options`);
+    for (const wp of cat.wallpapers) {
+      const wpFile = join(engine, wp.src);
+      check(existsSync(wpFile), `studio wallpaper exists: ${wp.src}`);
+      if (existsSync(wpFile) && wp.src.endsWith('.jpg')) {
+        const j = readJpeg(wpFile);
+        check(j && j.width === 1376 && j.height === 768 && j.bpp >= 1.0,
+          `${wp.src} is 1376x768 high-bitrate JPEG (${j ? j.bpp.toFixed(2) : 0} bpp)`);
+      }
+    }
+    for (const car of cat.cars.filter((c) => c.overlaySrc)) {
+      const carFile = join(engine, car.overlaySrc);
+      check(existsSync(carFile), `car overlay exists: ${car.overlaySrc}`);
+      if (existsSync(carFile)) {
+        const pngBuf = readFileSync(carFile);
+        const isRgbaPng = pngBuf[0] === 0x89 && pngBuf[1] === 0x50 && pngBuf[25] === 6;
+        check(isRgbaPng, `${car.overlaySrc} is genuine RGBA transparent PNG`);
+      }
+    }
+  }
 }
 
 console.log('Interface wiring (no browser required)');
@@ -409,6 +482,12 @@ try {
     'Ctrl/Cmd+B opens and closes the drawer without a mouse');
   check(b.rejectsWrongType === true && b.rejectsLargeFile === true,
     'wrong file types and oversized images are refused with a reason');
+  check(b.scheduleHasSixPeriods === true && b.scheduleRejectsDuplicate === true && b.scheduleAcceptsValid === true,
+    'editable 6-period schedule validates start times and persists range updates');
+  check(b.carAutoSwitchesToScenicPack === true && b.integratedPackClearsCarOverlay === true,
+    'Car Studio composites onto car-free Scenic Touring pack and never stacks two cars');
+  check(b.mediaIdleAtBoot === true && b.mediaConnectsLocalAudio === true,
+    'Music Bar starts truthfully idle and connects when real audio is loaded');
 
   // Startup: a reload must be silent; only an explicit start may make a sound.
   check(b.silentOnLoad === true, 'no startup sound while the wallpaper loads');

@@ -1,24 +1,20 @@
 /* ══════════════════════════════════════════════
    NIGHTDRIVE — Service worker: offline engine shell
    Pre-caches every file the wallpaper needs at runtime, so the scene,
-   HUD and controls keep working with no network at all.
-   Bump CACHE_NAME (nightdrive-vX.Y.Z) whenever engine files change —
-   the new worker then re-pre-caches and drops the old cache.
+   studios, HUD and controls keep working with no network at all.
    ══════════════════════════════════════════════ */
 
 'use strict';
 
-const CACHE_NAME = 'nightdrive-v1.7.0';
+const CACHE_NAME = 'nightdrive-v3.0.0';
 
-// Paths are relative to this worker, so the app also works when it is
-// hosted from a sub-directory. Every file listed here is validated by
-// `npm test` (scripts/validate.mjs).
 const PRECACHE_URLS = [
   './index.html',
   './script.js',
   './app.js',
   './styles.css',
   './assets/ridges.json',
+  './assets/studio-catalog.json',
   './engine-start.wav',
   './assets/morning/scene.jpg',
   './assets/morning/scene.svg',
@@ -36,12 +32,18 @@ const PRECACHE_URLS = [
   './assets/night/headlights.svg',
   './assets/midnight/scene.jpg',
   './assets/midnight/headlights.jpg',
-  './assets/midnight/headlights.svg'
+  './assets/midnight/headlights.svg',
+  './assets/library/alpine-dawn.jpg',
+  './assets/library/coastal-highway-day.jpg',
+  './assets/library/redwood-canyon-gold.jpg',
+  './assets/library/tokyo-skyline-dusk.jpg',
+  './assets/library/starlight-ridge-night.jpg',
+  './assets/library/aurora-pass-midnight.jpg',
+  './assets/cars/obsidian-muscle-coupe.png',
+  './assets/cars/stealth-gt-fastback.png',
+  './assets/cars/phantom-apex-supercar.png'
 ];
 
-// The page loads script.js?v=5, styles.css?v=6, … so query strings are
-// ignored when matching. Responses are stored under the plain path to keep
-// exactly one cache entry per file.
 const MATCH_OPTS = { ignoreSearch: true };
 const cacheKey = (request) => {
   const url = new URL(request.url);
@@ -55,7 +57,6 @@ function cachePut(request, response) {
   return response;
 }
 
-/** Serve the cached copy instantly, refresh it in the background for next time. */
 function staleWhileRevalidate(request) {
   return caches.match(request, MATCH_OPTS).then((cached) => {
     if (cached) {
@@ -66,8 +67,6 @@ function staleWhileRevalidate(request) {
   });
 }
 
-// Install — fetch and store the engine. A single missing file (e.g. a host
-// that ships a trimmed asset set) must not break offline mode for the rest.
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -76,7 +75,6 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Activate — delete caches from older releases, then take over open pages.
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys()
@@ -91,12 +89,9 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
-  // Fonts (Google Fonts) and weather APIs stay network-only; offline the app
-  // simply falls back to system fonts.
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Page loads: prefer fresh HTML when online, fall back to the cached shell.
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request).catch(() => caches.match('./index.html', MATCH_OPTS))

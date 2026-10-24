@@ -3,518 +3,828 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#05070a" />
+  <meta name="theme-color" content="#050811" />
   <meta name="color-scheme" content="dark" />
-  <meta name="description" content="NIGHTDRIVE — cinematic time-aware automotive wallpaper featuring a black Dodge Challenger on a winding mountain road." />
+  <meta name="description" content="NIGHTDRIVE — dynamic time-aware automotive &amp; scenic live desktop wallpaper." />
   <title>NIGHTDRIVE</title>
 
-  <!-- Google Fonts: Inter for the clock and UI. Loaded with display=swap so a
-       slow or offline font never blocks the wallpaper from painting. -->
+  <!-- Google Fonts: Oswald (tall condensed reference numerals) + Inter (clean UI).
+       Loaded with display=swap so offline boot never blocks on network fonts. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=Oswald:wght@300;400;500&amp;display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?v=9" />
+  <link rel="stylesheet" href="styles.css?v=10" />
 </head>
 <body>
 
-  <!-- ══ WALLPAPER STAGE ══ Near-black background prevents white flashes. -->
+  <!-- ══ WALLPAPER STAGE ══ -->
   <div id="stage" class="stage" aria-hidden="true">
 
-    <!-- Layer A — one of two crossfade layers -->
+    <!-- Layer A — primary crossfade buffer -->
     <div class="layer is-visible" data-layer="a">
       <div class="scene-fallback" data-period="night"></div>
       <div class="svg-scene"></div>
-      <!-- Background plate. `sizes`/`media` let a future portrait asset be
-           picked instead of a landscape one, so nothing is ever stretched or
-           blindly cropped. script.js fills these in per period. -->
       <img class="scene-img" alt="" loading="eager" decoding="async" />
+      <img class="car-img" alt="" aria-hidden="true" />
       <div class="svg-headlights"></div>
       <img class="headlight-img" alt="" />
-      <!-- Optional transparent car layer, drawn over the plate so the car and
-           the landscape can be swapped independently. Hidden unless a period
-           actually supplies one (see SCENE_ASSETS.cursor). -->
-      <img class="car-img" alt="" aria-hidden="true" />
     </div>
 
-    <!-- Layer B — the other crossfade layer -->
+    <!-- Layer B — secondary crossfade buffer -->
     <div class="layer" data-layer="b">
       <div class="scene-fallback" data-period="night"></div>
       <div class="svg-scene"></div>
       <img class="scene-img" alt="" loading="eager" decoding="async" />
+      <img class="car-img" alt="" aria-hidden="true" />
       <div class="svg-headlights"></div>
       <img class="headlight-img" alt="" />
-      <img class="car-img" alt="" aria-hidden="true" />
     </div>
 
-    <!-- User-supplied complete wallpaper (Complete Image mode). Sits on top of
-         the scene layers, which are hidden while it is active. -->
+    <!-- User-imported complete wallpaper layer -->
     <img id="custom-bg" class="custom-bg" alt="" aria-hidden="true" />
 
-    <!-- Dust motes in the headlight cones (disabled under reduced motion) -->
+    <!-- Dynamic volumetric headlight beam canvas for Car Studio overlays -->
+    <canvas id="car-beam-canvas" class="car-beam-canvas" aria-hidden="true"></canvas>
+
+    <!-- Subtle dust motes inside active headlight cones -->
     <canvas id="particles-canvas" class="particles-canvas" aria-hidden="true"></canvas>
 
-    <!-- Colour-temperature overlay — warms/cools the scene over time -->
+    <!-- Restrained period colour-temperature soft-light tint -->
     <div id="ct-overlay" class="ct-overlay" aria-hidden="true"></div>
 
-    <!-- Scene label — fades in briefly after each transition in wallpaper mode -->
+    <!-- Subtle top sky vignette for crisp clock legibility on bright skies -->
+    <div class="sky-legibility" aria-hidden="true"></div>
+
+    <!-- Brief transition toast badge -->
     <div id="scene-label" class="scene-label" aria-hidden="true">
       <span id="scene-label-text"></span>
     </div>
   </div><!-- /stage -->
 
-  <!-- ══ FOREGROUND OCCLUDER ══
-       A copy of the active plate clipped to everything below the measured
-       skyline. It sits above the clock and below the HUD text, so the mountain
-       cuts across the clock exactly where the photograph's horizon is. Two
-       copies mirror the two crossfade layers; with no ridge data both stay
-       hidden and the clock simply sits in front of the scene. -->
-  <div id="foreground" class="foreground" aria-hidden="true">
+  <!-- ══ OPTIONAL FOREGROUND OCCLUDER ══
+       Disabled by default (`is-depth-off`) so mountain silhouettes NEVER cut
+       through clock digits. Retained for optional user opt-in and geometry API. -->
+  <div id="foreground" class="foreground is-depth-off" aria-hidden="true">
     <img class="fg-img" data-fg="a" alt="" />
     <img class="fg-img" data-fg="b" alt="" />
   </div>
 
-  <!-- ══ CLOCK ══ Partially behind the silhouette. Position, scale and
-       opacity are set per scene from the measured ridge, so the same markup
-       works for every plate and every window size. -->
-  <div id="clock" class="clock" role="timer" aria-live="off" aria-label="Current time">
+  <!-- ══ CENTERED SKY CLOCK & EDITORIAL DATE (Reference Layout) ══ -->
+  <div id="clock" class="clock" role="timer" aria-live="off" aria-label="Current date and time">
+    <div id="hud-date" class="hud-date"></div>
     <div id="hud-time" class="hud-time">--:--</div>
   </div>
 
-  <!-- ══ HUD: DATE & WIDGETS ══ -->
-  <div id="hud" class="hud" aria-label="Date, weather and battery">
-    <div id="hud-date" class="hud-date"></div>
-
-    <div class="hud-widgets">
-      <div id="weather-widget" class="weather-widget" title="Weather">
-        <div id="weather-icon" class="weather-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
-        </div>
-        <div class="weather-temp-container">
+  <!-- ══ BOTTOM DESKTOP DOCK: WEATHER · BATTERY · COMPACT MUSIC BAR ══
+       Positioned safely above the Windows taskbar even on 1366x768 displays. -->
+  <div id="hud" class="hud" aria-label="System weather, battery and media bar">
+    <div class="hud-dock">
+      <!-- Frosted Weather + Battery capsule matching reference image-1.png -->
+      <div class="hud-widgets" id="hud-status-pill">
+        <button type="button" id="weather-widget" class="weather-widget" data-action="weather.refresh" title="Live local weather — click to refresh" aria-label="Weather status">
+          <span id="weather-icon" class="weather-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+          </span>
           <span id="weather-temp" class="weather-temp">--°C</span>
+        </button>
+
+        <span class="pill-divider" aria-hidden="true"></span>
+
+        <div id="battery-widget" class="battery-widget" title="System battery status" aria-label="Battery status">
+          <span id="battery-pct" class="battery-pct">—</span>
+          <span class="battery-icon-wrap" aria-hidden="true">
+            <span class="battery-body">
+              <span id="battery-fill" class="battery-fill"></span>
+            </span>
+            <span class="battery-tip"></span>
+          </span>
         </div>
       </div>
 
-      <div id="battery-widget" class="battery-widget" title="Battery">
-        <div class="battery-icon-wrap">
-          <div class="battery-body">
-            <div id="battery-fill" class="battery-fill"></div>
+      <!-- Compact Desktop Music Bar (syncs with Windows SMTC or local audio) -->
+      <div id="stage-music-bar" class="stage-music-bar" role="region" aria-label="Desktop music player">
+        <button type="button" class="music-mini-art" data-action="drawer.open" title="Open Quick Controls" aria-label="Open media controls in drawer">
+          <svg class="ic" aria-hidden="true"><use href="#i-music"/></svg>
+        </button>
+        <div class="music-mini-meta">
+          <div id="stage-music-title" class="music-mini-title">No media playing</div>
+          <div id="stage-music-artist" class="music-mini-sub">Windows Media / Local Audio</div>
+          <div class="music-mini-bar" aria-hidden="true">
+            <div id="stage-music-fill" class="music-mini-fill"></div>
           </div>
-          <div class="battery-tip"></div>
         </div>
-        <div class="battery-text">
-          <span id="battery-pct" class="battery-pct">—</span>
+        <div class="music-mini-actions">
+          <button type="button" class="icon-btn sm" id="stage-media-prev" data-action="media.prev" title="Previous track" aria-label="Previous track">
+            <svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg>
+          </button>
+          <button type="button" class="icon-btn sm play-accent" id="stage-media-toggle" data-action="media.toggle" title="Play or pause media" aria-label="Play or pause media">
+            <svg class="ic" aria-hidden="true"><use id="stage-media-icon" href="#i-play"/></svg>
+          </button>
+          <button type="button" class="icon-btn sm" id="stage-media-next" data-action="media.next" title="Next track" aria-label="Next track">
+            <svg class="ic" aria-hidden="true"><use href="#i-next"/></svg>
+          </button>
+          <button type="button" class="icon-btn sm" id="stage-media-import" data-action="media.loadFile" title="Load local audio file" aria-label="Load local audio file">
+            <svg class="ic" aria-hidden="true"><use href="#i-folder"/></svg>
+          </button>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ══ DRAWER ══
-       The native Windows host keeps the wallpaper behind the desktop icon
-       layer at rest, so Ctrl+Alt+N and the tray menu are always available. In
-       an interactive web view, hovering or focusing the edge handle slides
-       the panel out; leaving closes it after a short grace period. -->
-  <button type="button" id="drawer-trigger" class="drawer-trigger" aria-label="Open controls (Ctrl+Alt+N or tray menu)" title="Open controls — Ctrl+Alt+N or the NIGHTDRIVE tray menu" aria-expanded="false" aria-controls="drawer"></button>
+  <!-- ══ INVISIBLE EDGE SENSOR (Zero visual clutter when closed; never blocks desktop icons) ══ -->
+  <button type="button" id="drawer-trigger" class="drawer-trigger" aria-label="Open Quick Settings drawer (Ctrl+Alt+N)" title="Open NIGHTDRIVE Quick Settings (Ctrl+Alt+N)" aria-expanded="false" aria-controls="drawer"></button>
   <div id="drawer-rail" class="drawer-rail" aria-hidden="true"><span class="drawer-handle"></span></div>
 
-  <aside id="drawer" class="drawer" aria-label="Quick controls" aria-hidden="true">
+  <!-- ══ LEFT-SIDE QUICK SETTINGS DRAWER (Control Center Redesign) ══ -->
+  <aside id="drawer" class="drawer" aria-label="NIGHTDRIVE Quick Settings" aria-hidden="true">
     <header class="drawer-head">
-      <span class="drawer-brand">NIGHTDRIVE</span>
+      <div class="drawer-brand-wrap">
+        <span class="drawer-brand">NIGHTDRIVE</span>
+        <span id="drawer-period-badge" class="drawer-period-badge">Night</span>
+      </div>
       <div class="drawer-head-actions">
-        <button type="button" class="icon-btn" id="drawer-pin" data-action="drawer.pin" aria-pressed="false" title="Keep drawer open" aria-label="Keep drawer open">
+        <button type="button" class="icon-btn" id="drawer-gear" data-action="panel.open" title="Open Studio &amp; Settings" aria-label="Open Studio and Settings">
+          <svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg>
+        </button>
+        <button type="button" class="icon-btn" id="drawer-pin" data-action="drawer.pin" aria-pressed="false" title="Keep drawer pinned open" aria-label="Keep drawer open">
           <svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg>
         </button>
-        <button type="button" class="icon-btn" id="drawer-close" data-action="drawer.close" title="Close" aria-label="Close drawer">
+        <button type="button" class="icon-btn" id="drawer-close" data-action="drawer.close" title="Close drawer (Esc)" aria-label="Close drawer">
           <svg class="ic" aria-hidden="true"><use href="#i-close"/></svg>
         </button>
       </div>
     </header>
 
     <div class="drawer-body">
-      <!-- Status row -->
-      <section class="drawer-section">
-        <h2 class="drawer-title">System</h2>
-        <div class="status-row">
-          <button type="button" id="wifi-btn" class="status-chip" data-action="system.wifi" title="Network reachability — not the Wi-Fi radio; opens system network settings" aria-label="Network status and settings">
-            <svg class="ic" aria-hidden="true"><use href="#i-wifi"/></svg>
-            <span class="chip-label">Network</span>
-            <span id="wifi-status" class="conn-status">--</span>
+      <!-- 1. System Connectivity Tiles (Wi-Fi / Network & Bluetooth) -->
+      <section class="cc-section" aria-label="Connectivity">
+        <div class="cc-tile-grid">
+          <button type="button" id="wifi-btn" class="cc-tile is-on" data-action="system.wifi" title="Network status — click to open system network settings" aria-label="Network status and settings">
+            <span class="cc-tile-icon"><svg class="ic" aria-hidden="true"><use href="#i-wifi"/></svg></span>
+            <span class="cc-tile-copy">
+              <span class="cc-tile-title">Wi-Fi / Net</span>
+              <span id="wifi-status" class="cc-tile-sub">Online</span>
+            </span>
           </button>
-          <button type="button" id="bt-btn" class="status-chip" data-action="system.bt" title="Bluetooth state cannot be read from a web view — opens system settings" aria-label="Bluetooth: state unavailable; opens system settings">
-            <svg class="ic" aria-hidden="true"><use href="#i-bt"/></svg>
-            <span class="chip-label">Bluetooth</span>
-            <span id="bt-status" class="conn-status">--</span>
+
+          <button type="button" id="bt-btn" class="cc-tile" data-action="system.bt" title="Bluetooth status — click to open system Bluetooth settings" aria-label="Bluetooth status and settings">
+            <span class="cc-tile-icon"><svg class="ic" aria-hidden="true"><use href="#i-bt"/></svg></span>
+            <span class="cc-tile-copy">
+              <span class="cc-tile-title">Bluetooth</span>
+              <span id="bt-status" class="cc-tile-sub">System</span>
+            </span>
           </button>
         </div>
       </section>
 
-      <!-- Audio -->
-      <section class="drawer-section">
-        <h2 class="drawer-title">Audio</h2>
+      <!-- 2. Audio Volume & Mute -->
+      <section class="cc-card" aria-label="Audio controls">
+        <div class="cc-card-head">
+          <span class="cc-card-label">AUDIO</span>
+          <span id="audio-pct" class="cc-card-val">70%</span>
+        </div>
         <div class="control-row">
-          <button type="button" id="conn-audio" class="icon-btn" data-action="system.volumeSettings" title="System volume panel" aria-label="Open system volume">
+          <button type="button" id="conn-audio" class="icon-btn sm" data-action="system.volumeSettings" title="Open system sound mixer" aria-label="Open system sound mixer">
             <svg class="ic" aria-hidden="true"><use href="#i-volume"/></svg>
           </button>
-          <input type="range" id="volume-range" class="slider" min="0" max="100" step="1" value="70" aria-label="NIGHTDRIVE audio volume" />
-          <span id="audio-pct" class="value-label">—</span>
-          <button type="button" id="mute-btn" class="icon-btn" data-action="audio.mute" aria-pressed="false" title="Mute NIGHTDRIVE audio" aria-label="Mute">
-            <svg class="ic" aria-hidden="true"><use href="#i-mute"/></svg>
+          <input type="range" id="volume-range" class="slider" min="0" max="100" step="1" value="70" aria-label="Audio volume" />
+          <button type="button" id="mute-btn" class="icon-btn sm" data-action="audio.mute" aria-pressed="false" title="Mute or unmute audio" aria-label="Mute audio">
+            <svg class="ic" aria-hidden="true"><use id="mute-icon-use" href="#i-volume"/></svg>
           </button>
         </div>
-        <p class="hint" id="volume-hint">Controls NIGHTDRIVE's own sound. System volume is the OS mixer.</p>
+        <p class="hint compact" id="volume-hint">Controls wallpaper audio &amp; syncs with Windows mixer when hosted.</p>
       </section>
 
-      <!-- Scene -->
-      <section class="drawer-section">
-        <h2 class="drawer-title">Scene</h2>
-        <div class="control-row wrap">
-          <button type="button" class="pill-btn" data-action="scene.prev" title="Previous scene" aria-label="Previous scene">‹</button>
-          <button type="button" class="pill-btn grow" id="scene-name" data-action="scene.cycle" aria-label="Next scene">—</button>
-          <button type="button" class="pill-btn" data-action="scene.next" title="Next scene" aria-label="Next scene">›</button>
+      <!-- 3. Integrated Music Player Card -->
+      <section class="cc-card music-card" aria-label="Music player">
+        <div class="cc-card-head">
+          <span class="cc-card-label">MUSIC</span>
+          <div class="music-card-tools">
+            <span id="drawer-music-source" class="music-source-tag">Idle</span>
+            <button type="button" class="mini-link-btn" data-action="media.loadFile" title="Load local MP3, WAV, OGG, FLAC or M4A audio file">Load file</button>
+          </div>
         </div>
-        <div class="control-row">
-          <button type="button" class="toggle-btn" id="auto-scene" data-action="scene.auto" aria-pressed="true">
-            <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
-            <span>Follow the clock</span>
+
+        <div class="music-now-row">
+          <div class="music-disc" id="drawer-music-disc" aria-hidden="true">
+            <svg class="ic" aria-hidden="true"><use href="#i-music"/></svg>
+          </div>
+          <div class="music-track-info">
+            <div id="drawer-music-title" class="music-title">No media session connected</div>
+            <div id="drawer-music-artist" class="music-artist">Play music in Windows or load an audio file</div>
+          </div>
+        </div>
+
+        <div class="music-progress-wrap">
+          <input type="range" id="music-seek" class="slider music-slider" min="0" max="1000" step="1" value="0" aria-label="Track playback position" />
+          <div class="music-times">
+            <span id="music-pos">0:00</span>
+            <span id="music-dur">0:00</span>
+          </div>
+        </div>
+
+        <div class="music-transport">
+          <button type="button" class="icon-btn" id="drawer-media-prev" data-action="media.prev" title="Previous track" aria-label="Previous track">
+            <svg class="ic" aria-hidden="true"><use href="#i-prev"/></svg>
+          </button>
+          <button type="button" class="icon-btn play-main" id="drawer-media-toggle" data-action="media.toggle" title="Play or pause" aria-label="Play or pause">
+            <svg class="ic" aria-hidden="true"><use id="drawer-media-icon" href="#i-play"/></svg>
+          </button>
+          <button type="button" class="icon-btn" id="drawer-media-next" data-action="media.next" title="Next track" aria-label="Next track">
+            <svg class="ic" aria-hidden="true"><use href="#i-next"/></svg>
+          </button>
+          <button type="button" class="icon-btn" id="drawer-music-bar-toggle" data-action="media.toggleDesktopBar" aria-pressed="true" title="Show or hide music bar on desktop" aria-label="Toggle desktop music bar">
+            <svg class="ic" aria-hidden="true"><use href="#i-layout"/></svg>
           </button>
         </div>
-        <div class="control-row">
+      </section>
+
+      <!-- 4. Scene, Time-of-Day & Headlights -->
+      <section class="cc-card" aria-label="Scene and time controls">
+        <div class="cc-card-head">
+          <span class="cc-card-label">SCENE &amp; TIME</span>
+          <button type="button" class="mini-link-btn" data-action="studio.schedule" title="Edit automatic time schedule">Schedule…</button>
+        </div>
+
+        <div class="scene-stepper">
+          <button type="button" class="pill-btn sq" data-action="scene.prev" title="Previous time scene" aria-label="Previous scene">‹</button>
+          <button type="button" class="pill-btn grow scene-Readout" id="scene-name" data-action="scene.cycle" title="Click to cycle scene" aria-label="Current scene — click for next">Night</button>
+          <button type="button" class="pill-btn sq" data-action="scene.next" title="Next time scene" aria-label="Next scene">›</button>
+        </div>
+
+        <div class="period-chip-grid" role="group" aria-label="Select time of day">
+          <button type="button" class="period-chip" data-action="scene.pick" data-period="morning">Morning</button>
+          <button type="button" class="period-chip" data-action="scene.pick" data-period="day">Day</button>
+          <button type="button" class="period-chip" data-action="scene.pick" data-period="goldenHour">Golden</button>
+          <button type="button" class="period-chip" data-action="scene.pick" data-period="dusk">Dusk</button>
+          <button type="button" class="period-chip" data-action="scene.pick" data-period="night">Night</button>
+          <button type="button" class="period-chip" data-action="scene.pick" data-period="midnight">Midnight</button>
+        </div>
+
+        <div class="cc-toggle-grid">
+          <button type="button" class="toggle-btn" id="auto-scene" data-action="scene.auto" aria-pressed="true">
+            <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
+            <span id="auto-scene-label">Auto by time</span>
+          </button>
           <button type="button" class="toggle-btn" id="headlights-btn" data-action="scene.headlights" aria-pressed="false">
             <svg class="ic" aria-hidden="true"><use href="#i-beam"/></svg>
-            <span>Headlights</span>
+            <span id="headlights-btn-label">Headlights</span>
           </button>
           <button type="button" class="toggle-btn" id="playback-btn" data-action="scene.playback" aria-pressed="true">
             <svg class="ic" aria-hidden="true"><use href="#i-play"/></svg>
-            <span>Playback</span>
+            <span>Motion</span>
           </button>
-        </div>
-      </section>
-
-      <!-- Engine -->
-      <section class="drawer-section">
-        <h2 class="drawer-title">Engine</h2>
-        <div class="control-row">
-          <button type="button" id="start-engine" class="toggle-btn" data-action="engine.start">
+          <button type="button" class="toggle-btn" id="start-engine" data-action="engine.start">
             <svg class="ic" aria-hidden="true"><use href="#i-power"/></svg>
-            <span>Start engine</span>
+            <span>Ignition</span>
           </button>
         </div>
-        <p class="hint" id="startup-hint">Startup sound and vibration play only when you ask for them.</p>
+        <p class="hint compact" id="startup-hint">Auto mode follows your local clock; manual pick pauses until resumed.</p>
       </section>
 
-      <!-- Display -->
-      <section class="drawer-section">
-        <h2 class="drawer-title">Display</h2>
+      <!-- 5. Wallpaper Studio & Car Studio Entry Cards -->
+      <section class="cc-section" aria-label="Customization studios">
+        <div class="studio-launch-grid">
+          <button type="button" class="studio-launch-card" data-action="studio.wallpapers">
+            <span class="studio-launch-ic"><svg class="ic" aria-hidden="true"><use href="#i-image"/></svg></span>
+            <span class="studio-launch-title">Wallpaper Studio</span>
+            <span id="drawer-wp-summary" class="studio-launch-sub">12 scenes · Search &amp; Import</span>
+          </button>
+          <button type="button" class="studio-launch-card" data-action="studio.cars">
+            <span class="studio-launch-ic"><svg class="ic" aria-hidden="true"><use href="#i-car"/></svg></span>
+            <span class="studio-launch-title">Car Studio</span>
+            <span id="drawer-car-summary" class="studio-launch-sub">Scene Native · 4 vehicles</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- 6. Live Battery, Weather & Clock Telemetry Cards -->
+      <section class="cc-telemetry-grid" aria-label="System telemetry">
+        <div class="telemetry-card">
+          <span class="cc-card-label">BATTERY</span>
+          <strong id="drawer-battery-val" class="telemetry-val">—</strong>
+          <span id="drawer-battery-sub" class="telemetry-sub">Checking…</span>
+        </div>
+        <div class="telemetry-card">
+          <span class="cc-card-label">WEATHER</span>
+          <strong id="drawer-weather-val" class="telemetry-val">--°C</strong>
+          <span id="drawer-weather-sub" class="telemetry-sub">Local forecast</span>
+        </div>
+        <div class="telemetry-card">
+          <span class="cc-card-label">LOCAL TIME</span>
+          <strong id="drawer-clock-val" class="telemetry-val">--:--</strong>
+          <span id="drawer-date-sub" class="telemetry-sub">—</span>
+        </div>
+      </section>
+
+      <!-- 7. Display & Visual Brightness -->
+      <section class="cc-card" aria-label="Display brightness">
+        <div class="cc-card-head">
+          <span class="cc-card-label">DISPLAY BRIGHTNESS</span>
+          <span id="brightness-value" class="cc-card-val">100%</span>
+        </div>
         <label class="control-row" for="brightness-range">
           <svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg>
           <input type="range" id="brightness-range" class="slider" min="40" max="110" step="1" value="100" aria-label="Scene brightness" />
-          <span id="brightness-value" class="value-label">100%</span>
+          <button type="button" class="icon-btn sm" data-action="system.displaySettings" title="Open OS display settings" aria-label="Open OS display settings">
+            <svg class="ic" aria-hidden="true"><use href="#i-display"/></svg>
+          </button>
         </label>
-        <p class="hint">Dims the wallpaper itself. System brightness needs a native host.</p>
       </section>
     </div>
 
     <footer class="drawer-foot">
       <button type="button" class="wide-btn primary" id="open-settings" data-action="panel.open">
         <svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg>
-        <span>Wallpaper Settings</span>
+        <span>Studio &amp; Settings</span>
       </button>
-      <button type="button" class="wide-btn" data-action="app.exit">
-        <svg class="ic" aria-hidden="true"><use href="#i-exit"/></svg>
-        <span>Exit</span>
-      </button>
+      <div class="drawer-foot-row">
+        <button type="button" class="wide-btn subtle" data-action="app.reset">
+          <svg class="ic" aria-hidden="true"><use href="#i-reset"/></svg>
+          <span>Restore Defaults</span>
+        </button>
+        <button type="button" class="wide-btn subtle danger-hover" data-action="app.exit">
+          <svg class="ic" aria-hidden="true"><use href="#i-exit"/></svg>
+          <span>Exit</span>
+        </button>
+      </div>
     </footer>
   </aside>
 
-  <!-- ══ SETTINGS PANEL ══ -->
+  <!-- ══ UNIFIED STUDIO & SETTINGS WORKSPACE (#panel) ══
+       Houses 4 full tabs: Wallpaper Studio, Car Studio, Time Schedule, and Settings. -->
   <div id="panel-scrim" class="panel-scrim" hidden></div>
-  <section id="panel" class="panel" role="dialog" aria-modal="false" aria-labelledby="panel-title" aria-hidden="true" hidden>
+  <section id="panel" class="panel studio-panel" role="dialog" aria-modal="false" aria-labelledby="panel-title" aria-hidden="true" hidden>
     <header class="panel-head">
-      <h1 id="panel-title">Wallpaper Settings</h1>
-      <button type="button" class="icon-btn" data-action="panel.close" title="Close settings" aria-label="Close settings">
+      <div class="panel-head-left">
+        <h1 id="panel-title">NIGHTDRIVE Studio</h1>
+        <nav class="studio-tabs" role="tablist" aria-label="Studio sections">
+          <button type="button" class="studio-tab is-active" id="tab-btn-wallpapers" role="tab" aria-selected="true" data-action="studio.tab" data-tab="wallpapers">
+            <svg class="ic" aria-hidden="true"><use href="#i-image"/></svg>
+            <span>Wallpaper Studio</span>
+          </button>
+          <button type="button" class="studio-tab" id="tab-btn-cars" role="tab" aria-selected="false" data-action="studio.tab" data-tab="cars">
+            <svg class="ic" aria-hidden="true"><use href="#i-car"/></svg>
+            <span>Car Studio</span>
+          </button>
+          <button type="button" class="studio-tab" id="tab-btn-schedule" role="tab" aria-selected="false" data-action="studio.tab" data-tab="schedule">
+            <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
+            <span>Time Schedule</span>
+          </button>
+          <button type="button" class="studio-tab" id="tab-btn-settings" role="tab" aria-selected="false" data-action="studio.tab" data-tab="settings">
+            <svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg>
+            <span>Settings</span>
+          </button>
+        </nav>
+      </div>
+      <button type="button" class="icon-btn" data-action="panel.close" title="Close Studio (Esc)" aria-label="Close Studio">
         <svg class="ic" aria-hidden="true"><use href="#i-close"/></svg>
       </button>
     </header>
 
-    <div class="panel-body">
-      <!-- Appearance & clock -->
-      <details class="panel-group" open>
-        <summary>Appearance &amp; clock</summary>
-        <div class="group-body">
-          <div class="field">
-            <label class="field-label" for="clock-visible">Clock</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="clock-visible" data-action="clock.visible" role="switch" aria-checked="true"><span></span></button>
-            </div>
+    <div class="panel-body studio-body">
+
+      <!-- ══ TAB 1: WALLPAPER STUDIO ══ -->
+      <div id="tab-wallpapers" class="tab-pane is-active" role="tabpanel" aria-labelledby="tab-btn-wallpapers">
+        <div class="studio-toolbar">
+          <div class="search-box">
+            <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+            <input type="search" id="wp-search-input" class="search-input" placeholder="Search mountain, city, coastal, aurora, night sky, road, dusk…" aria-label="Search wallpapers" />
+            <button type="button" class="pill-btn sm" id="wp-online-search-btn" data-action="wp.searchOnline" title="Search Wikimedia Commons / configured online providers">Search Online</button>
           </div>
-          <div class="field">
-            <label class="field-label" for="clock-24h">24-hour clock</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="clock-24h" data-action="clock.format" role="switch" aria-checked="true"><span></span></button>
-            </div>
+          <div class="studio-toolbar-actions">
+            <button type="button" class="pill-btn primary" data-action="wp.import">
+              <svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>
+              <span>Import Local Wallpaper…</span>
+            </button>
+            <button type="button" class="pill-btn" data-action="wp.resetDefault" title="Return to built-in time-scheduled scenes">Reset Active</button>
           </div>
-          <label class="field" for="clock-scale">
-            <span class="field-label">Clock size</span>
-            <input type="range" id="clock-scale" class="slider" min="60" max="140" step="1" value="100" />
-            <output id="clock-scale-out" class="value-label">100%</output>
-          </label>
-          <label class="field" for="clock-opacity">
-            <span class="field-label">Clock opacity</span>
-            <input type="range" id="clock-opacity" class="slider" min="30" max="100" step="1" value="85" />
-            <output id="clock-opacity-out" class="value-label">85%</output>
-          </label>
-          <label class="field" for="clock-offset">
-            <span class="field-label">Clock position</span>
-            <input type="range" id="clock-offset" class="slider" min="-20" max="20" step="1" value="0" />
-            <output id="clock-offset-out" class="value-label">0</output>
-          </label>
-          <p class="hint">The clock sits behind the mountain silhouette. Its height is measured from the active scene; the offset nudges it.</p>
         </div>
-      </details>
 
-      <!-- Cars & backgrounds -->
-      <details class="panel-group">
-        <summary>Cars &amp; backgrounds</summary>
-        <div class="group-body">
-          <div class="field">
-            <span class="field-label">Scene mode</span>
-            <div class="segmented" role="radiogroup" aria-label="Scene mode">
-              <button type="button" class="seg" data-action="mode.scene" aria-pressed="true">Built-in scenes</button>
-              <button type="button" class="seg" data-action="mode.custom" aria-pressed="false">Custom scene</button>
-            </div>
+        <div class="category-bar" role="group" aria-label="Wallpaper categories">
+          <button type="button" class="cat-pill is-active" data-action="wp.filter" data-filter="all">All Scenes</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="morning">Morning</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="day">Day</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="goldenHour">Golden Hour</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="dusk">Dusk</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="night">Night</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="midnight">Midnight</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="car-ready">Car-Overlay Ready</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="favourites">Favourites ♥</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="imported">Imported</button>
+          <button type="button" class="cat-pill" data-action="wp.filter" data-filter="online">Online Results</button>
+        </div>
+
+        <div id="wp-pack-banner" class="pack-banner">
+          <div class="pack-banner-copy">
+            <strong>Active Schedule Pack:</strong>
+            <span id="wp-active-pack-label">Cascade Overlook (Integrated Coupe)</span>
           </div>
-          <div class="field">
-            <span class="field-label">Car layer</span>
+          <div class="pack-banner-actions">
+            <button type="button" class="pill-btn sm" id="pack-cascade-btn" data-action="wp.usePack" data-pack="cascade-overlook">Use Cascade Overlook Pack</button>
+            <button type="button" class="pill-btn sm" id="pack-scenic-btn" data-action="wp.usePack" data-pack="scenic-touring">Use Scenic Touring Pack (Car-Ready)</button>
+          </div>
+        </div>
+
+        <div id="wp-status-msg" class="studio-status" hidden></div>
+        <div id="wp-gallery" class="studio-grid" aria-live="polite"></div>
+
+        <!-- Optional External Provider API Configuration (Honest & transparent) -->
+        <details class="panel-group studio-api-box">
+          <summary>External Wallpaper Sources &amp; Attribution Settings</summary>
+          <div class="group-body">
+            <p class="hint"><strong>Wikimedia Commons</strong> photographic search works immediately with no API key (CC-licensed &amp; public-domain high-resolution photography with full attribution). Optionally add your own Unsplash or Pexels API key to include those catalogues in online searches.</p>
+            <div class="api-grid">
+              <label class="field compact-field" for="unsplash-key-input">
+                <span class="field-label">Unsplash Access Key (optional)</span>
+                <input type="password" id="unsplash-key-input" class="text-input" placeholder="Paste Unsplash Access Key…" autocomplete="off" />
+              </label>
+              <label class="field compact-field" for="pexels-key-input">
+                <span class="field-label">Pexels API Key (optional)</span>
+                <input type="password" id="pexels-key-input" class="text-input" placeholder="Paste Pexels API Key…" autocomplete="off" />
+              </label>
+            </div>
             <div class="field-control row">
-              <button type="button" class="pill-btn" data-action="car.import">Import car image…</button>
-              <button type="button" class="pill-btn" data-action="car.clear">Use photographed car</button>
+              <button type="button" class="pill-btn sm primary" data-action="wp.saveApiKeys">Save Provider Keys</button>
+              <button type="button" class="pill-btn sm" data-action="wp.clearApiKeys">Clear Keys</button>
             </div>
           </div>
-          <p class="hint" id="car-hint">A transparent PNG or WebP keeps its own background out of the scene. The built-in plates already contain a photographed car, so a new one is drawn on top of it — import a background too for a clean result. A cut-out is not attempted: an ordinary photo shows its full frame.</p>
+        </details>
+      </div>
 
-          <div id="car-controls" class="sub-controls" hidden>
+      <!-- ══ TAB 2: CAR STUDIO ══ -->
+      <div id="tab-cars" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-cars" hidden>
+        <div class="studio-toolbar">
+          <div class="search-box">
+            <svg class="ic" aria-hidden="true"><use href="#i-search"/></svg>
+            <input type="search" id="car-search-input" class="search-input" placeholder="Search muscle, widebody, sports car, supercar, coupe, GT…" aria-label="Search cars" />
+          </div>
+          <div class="studio-toolbar-actions">
+            <button type="button" class="pill-btn primary" data-action="car.import">
+              <svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg>
+              <span>Import Transparent Car (PNG/WebP)…</span>
+            </button>
+            <button type="button" class="pill-btn" data-action="car.clear">Use Scene Native</button>
+          </div>
+        </div>
+
+        <div class="category-bar" role="group" aria-label="Car categories">
+          <button type="button" class="cat-pill is-active" data-action="car.filter" data-filter="all">All Vehicles</button>
+          <button type="button" class="cat-pill" data-action="car.filter" data-filter="native">Scene Native</button>
+          <button type="button" class="cat-pill" data-action="car.filter" data-filter="muscle">Muscle Cars</button>
+          <button type="button" class="cat-pill" data-action="car.filter" data-filter="coupe">Performance Coupes</button>
+          <button type="button" class="cat-pill" data-action="car.filter" data-filter="sports">Sports &amp; Supercars</button>
+          <button type="button" class="cat-pill" data-action="car.filter" data-filter="imported">Imported</button>
+        </div>
+
+        <div id="car-compat-banner" class="compat-banner">
+          <div id="car-compat-text" class="compat-banner-text">
+            Transparent Car Studio overlays composite cleanly onto <strong>Scenic Touring</strong> car-free backdrops and custom car-free scenes. Complete integrated scenes (Cascade Overlook) keep their photographed car so two vehicles never stack.
+          </div>
+          <button type="button" class="pill-btn sm primary" id="car-switch-scenic-btn" data-action="wp.usePack" data-pack="scenic-touring">Switch to Car-Ready Scenic Pack</button>
+        </div>
+
+        <div id="car-gallery" class="studio-grid car-grid" aria-live="polite"></div>
+
+        <div class="studio-Controls-split">
+          <div class="sub-card">
+            <h3 class="sub-card-title">Headlights &amp; Road Lighting</h3>
+            <div class="field">
+              <span class="field-label">Headlight mode</span>
+              <div class="segmented" role="radiogroup" aria-label="Headlight mode">
+                <button type="button" class="seg" id="hl-mode-auto" data-action="hl.mode" data-mode="auto" aria-pressed="true">Auto by Time</button>
+                <button type="button" class="seg" id="hl-mode-on" data-action="hl.mode" data-mode="on" aria-pressed="false">Always On</button>
+                <button type="button" class="seg" id="hl-mode-off" data-action="hl.mode" data-mode="off" aria-pressed="false">Off</button>
+              </div>
+            </div>
+            <label class="field" for="beam-intensity">
+              <span class="field-label">Beam intensity</span>
+              <input type="range" id="beam-intensity" class="slider" min="20" max="100" step="1" value="75" />
+              <output id="beam-intensity-out" class="value-label">75%</output>
+            </label>
+            <div class="field">
+              <label class="field-label" for="preserve-car-toggle">Preserve selected car across time schedule</label>
+              <div class="field-control">
+                <button type="button" class="switch" id="preserve-car-toggle" data-action="car.preserveSchedule" role="switch" aria-checked="true"><span></span></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="sub-card" id="car-controls">
+            <h3 class="sub-card-title">Vehicle Placement &amp; Framing</h3>
             <label class="field" for="car-scale">
               <span class="field-label">Car scale</span>
-              <input type="range" id="car-scale" class="slider" min="20" max="180" step="1" value="100" />
+              <input type="range" id="car-scale" class="slider" min="50" max="150" step="1" value="100" />
               <output id="car-scale-out" class="value-label">100%</output>
             </label>
             <label class="field" for="car-x">
-              <span class="field-label">Car horizontal</span>
-              <input type="range" id="car-x" class="slider" min="0" max="100" step="1" value="50" />
-              <output id="car-x-out" class="value-label">50%</output>
+              <span class="field-label">Horizontal</span>
+              <input type="range" id="car-x" class="slider" min="0" max="100" step="1" value="58" />
+              <output id="car-x-out" class="value-label">58%</output>
             </label>
             <label class="field" for="car-y">
-              <span class="field-label">Car vertical</span>
+              <span class="field-label">Vertical</span>
               <input type="range" id="car-y" class="slider" min="0" max="100" step="1" value="74" />
               <output id="car-y-out" class="value-label">74%</output>
             </label>
             <div class="field">
               <span class="field-label">Car fit</span>
               <div class="segmented" role="radiogroup" aria-label="Car fit">
-                <button type="button" class="seg" data-action="car.fit.contain" aria-pressed="true">Contain</button>
-                <button type="button" class="seg" data-action="car.fit.cover" aria-pressed="false">Fill frame</button>
+                <button type="button" class="seg" data-action="car.fit.cover" aria-pressed="true">Stage-Locked</button>
+                <button type="button" class="seg" data-action="car.fit.contain" aria-pressed="false">Contain</button>
               </div>
             </div>
-            <p class="hint">A transparent PNG or WebP keeps its own background out of the scene. A normal photograph is placed as-is — it cannot be cut out automatically.</p>
+            <p class="hint" id="car-hint">Shipped Car Studio overlays are stage-locked to 1376×768 tarmac coordinates.</p>
           </div>
-          <div class="field">
-            <span class="field-label">Background</span>
-            <div class="field-control row">
-              <button type="button" class="pill-btn" data-action="bg.import">Import background…</button>
-              <button type="button" class="pill-btn" data-action="bg.clear">Use built-in scenes</button>
+        </div>
+      </div>
+
+      <!-- ══ TAB 3: AUTOMATIC TIME SCHEDULE ══ -->
+      <div id="tab-schedule" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-schedule" hidden>
+        <div class="schedule-top-card">
+          <div class="schedule-top-main">
+            <div>
+              <h2 class="sub-card-title">Automatic Wallpaper Changing by Local Time</h2>
+              <p class="hint" id="schedule-status-line">Reads your system local clock and crossfades smoothly between periods.</p>
+            </div>
+            <div class="schedule-top-controls">
+              <button type="button" class="pill-btn primary" id="schedule-resume-btn" data-action="schedule.enableAuto">Follow Local Clock</button>
+              <button type="button" class="pill-btn" data-action="schedule.reset">Reset Default Hours</button>
             </div>
           </div>
-          <div id="bg-controls" class="sub-controls" hidden>
+
+          <div class="schedule-options-row">
             <div class="field">
-              <span class="field-label">Fit</span>
-              <div class="segmented" role="radiogroup" aria-label="Background fit">
-                <button type="button" class="seg" data-action="bg.fit.cover" aria-pressed="true">Fill</button>
-                <button type="button" class="seg" data-action="bg.fit.contain" aria-pressed="false">Fit</button>
+              <label class="field-label" for="auto-scene-setting">Enable time-based auto switching</label>
+              <div class="field-control">
+                <button type="button" class="switch" id="auto-scene-setting" data-action="scene.auto" role="switch" aria-checked="true"><span></span></button>
               </div>
             </div>
-            <label class="field" for="bg-scale">
-              <span class="field-label">Scale</span>
-              <input type="range" id="bg-scale" class="slider" min="100" max="200" step="1" value="100" />
-              <output id="bg-scale-out" class="value-label">100%</output>
+
+            <div class="field">
+              <label class="field-label" for="manual-resume-select">When a scene is chosen manually</label>
+              <div class="field-control">
+                <select id="manual-resume-select" class="select">
+                  <option value="untilReenabled">Stay manual until Auto is re-enabled</option>
+                  <option value="nextBoundary">Resume schedule at next time period</option>
+                </select>
+              </div>
+            </div>
+
+            <label class="field" for="schedule-blend-mins">
+              <span class="field-label">Gradual boundary blend window</span>
+              <input type="range" id="schedule-blend-mins" class="slider" min="5" max="60" step="5" value="20" />
+              <output id="schedule-blend-mins-out" class="value-label">20 min</output>
             </label>
-            <label class="field" for="bg-x">
-              <span class="field-label">Horizontal</span>
-              <input type="range" id="bg-x" class="slider" min="0" max="100" step="1" value="50" />
-              <output id="bg-x-out" class="value-label">50%</output>
-            </label>
-            <label class="field" for="bg-y">
-              <span class="field-label">Vertical</span>
-              <input type="range" id="bg-y" class="slider" min="0" max="100" step="1" value="50" />
-              <output id="bg-y-out" class="value-label">50%</output>
-            </label>
-            <label class="field" for="bg-brightness">
-              <span class="field-label">Brightness</span>
-              <input type="range" id="bg-brightness" class="slider" min="30" max="130" step="1" value="100" />
-              <output id="bg-brightness-out" class="value-label">100%</output>
+
+            <label class="field" for="transition-speed">
+              <span class="field-label">Manual crossfade duration</span>
+              <input type="range" id="transition-speed" class="slider" min="300" max="4000" step="100" value="1600" />
+              <output id="transition-speed-out" class="value-label">1.6 s</output>
             </label>
           </div>
         </div>
-      </details>
 
-      <!-- Custom wallpaper -->
-      <details class="panel-group">
-        <summary>Custom wallpaper</summary>
-        <div class="group-body">
-          <p class="hint">Import a finished wallpaper — a photograph, a render, any composition. It is used whole: no second car, no duplicated clock, no forced splitting.</p>
-          <div class="field">
-            <div class="field-control row">
-              <button type="button" class="pill-btn primary" data-action="design.import">Import design…</button>
-              <button type="button" class="pill-btn" data-action="design.clear">Back to NIGHTDRIVE</button>
-            </div>
-          </div>
-          <div id="design-preview-wrap" class="design-preview-wrap" hidden>
-            <img id="design-preview" class="design-preview" alt="Preview of the imported wallpaper" />
-            <div class="design-meta">
-              <span id="design-name" class="value-label">—</span>
-              <span id="design-size" class="value-label"></span>
-            </div>
-            <div class="field-control row">
-              <button type="button" class="pill-btn primary" data-action="design.apply">Apply this design</button>
-              <button type="button" class="pill-btn" data-action="design.discard">Discard</button>
-            </div>
-          </div>
-        </div>
-      </details>
+        <div id="schedule-rows" class="schedule-table" role="list" aria-label="Time period schedule"></div>
+      </div>
 
-      <!-- Drawer & icons -->
-      <details class="panel-group">
-        <summary>Drawer &amp; icons</summary>
-        <div class="group-body">
-          <div class="field">
-            <label class="field-label" for="drawer-enabled">Edge trigger</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="drawer-enabled" data-action="drawer.enabled" role="switch" aria-checked="true"><span></span></button>
+      <!-- ══ TAB 4: APPEARANCE, CLOCK, SYSTEM & RESET SETTINGS ══ -->
+      <div id="tab-settings" class="tab-pane" role="tabpanel" aria-labelledby="tab-btn-settings" hidden>
+        <div class="settings-columns">
+          <!-- Clock & HUD -->
+          <details class="panel-group" open>
+            <summary>Clock, Date &amp; Desktop Widgets</summary>
+            <div class="group-body">
+              <div class="field">
+                <label class="field-label" for="clock-visible">Show sky clock &amp; date</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="clock-visible" data-action="clock.visible" role="switch" aria-checked="true"><span></span></button>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label" for="clock-24h">24-hour clock format</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="clock-24h" data-action="clock.format" role="switch" aria-checked="true"><span></span></button>
+                </div>
+              </div>
+              <label class="field" for="clock-scale">
+                <span class="field-label">Clock scale</span>
+                <input type="range" id="clock-scale" class="slider" min="60" max="135" step="1" value="100" />
+                <output id="clock-scale-out" class="value-label">100%</output>
+              </label>
+              <label class="field" for="clock-opacity">
+                <span class="field-label">Clock translucency</span>
+                <input type="range" id="clock-opacity" class="slider" min="35" max="100" step="1" value="88" />
+                <output id="clock-opacity-out" class="value-label">88%</output>
+              </label>
+              <label class="field" for="clock-offset">
+                <span class="field-label">Vertical sky offset</span>
+                <input type="range" id="clock-offset" class="slider" min="-15" max="15" step="1" value="0" />
+                <output id="clock-offset-out" class="value-label">0</output>
+              </label>
+              <div class="field">
+                <label class="field-label" for="desktop-music-toggle">Show compact Music Bar on desktop</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="desktop-music-toggle" data-action="media.toggleDesktopBar" role="switch" aria-checked="true"><span></span></button>
+                </div>
+              </div>
+              <p class="hint">Every clock digit is automatically clamped above the active mountain/city skyline and safely inside the screen frame.</p>
             </div>
-          </div>
-          <div class="field">
-            <label class="field-label" for="drawer-pinned-setting">Keep drawer open</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="drawer-pinned-setting" data-action="drawer.pin" role="switch" aria-checked="false"><span></span></button>
-            </div>
-          </div>
-          <p class="hint">Keyboard: press <kbd>Tab</kbd> to reach the edge trigger, <kbd>Enter</kbd> to open, <kbd>Esc</kbd> to close.</p>
-        </div>
-      </details>
+          </details>
 
-      <!-- Sound & startup -->
-      <details class="panel-group">
-        <summary>Sound &amp; startup</summary>
-        <div class="group-body">
-          <label class="field" for="volume-range-2">
-            <span class="field-label">Engine sound volume</span>
-            <input type="range" id="volume-range-2" class="slider" min="0" max="100" step="1" value="70" />
-            <output id="volume-range-2-out" class="value-label">70%</output>
-          </label>
-          <div class="field">
-            <label class="field-label" for="startup-effect">Startup effect</label>
-            <div class="field-control">
-              <select id="startup-effect" class="select">
-                <option value="manual">Only when I start the engine</option>
-                <option value="once">Once per app launch</option>
-                <option value="always">Every wallpaper load</option>
-              </select>
+          <!-- Weather Location Override -->
+          <details class="panel-group" open>
+            <summary>Weather &amp; Location</summary>
+            <div class="group-body">
+              <p class="hint" id="weather-settings-status">Uses Open-Meteo live weather. Set manual coordinates or city lookup below if OS geolocation is disabled.</p>
+              <div class="field compact-field">
+                <label class="field-label" for="weather-city-input">Search city / coordinates</label>
+                <div class="field-control row">
+                  <input type="text" id="weather-city-input" class="text-input" placeholder="e.g. Tokyo, London, or 37.77,-122.41" />
+                  <button type="button" class="pill-btn sm primary" data-action="weather.setCity">Set Location</button>
+                  <button type="button" class="pill-btn sm" data-action="weather.autoLocate">Auto</button>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">Temperature unit</span>
+                <div class="segmented" role="radiogroup" aria-label="Temperature unit">
+                  <button type="button" class="seg" id="temp-unit-c" data-action="weather.unitC" aria-pressed="true">°C</button>
+                  <button type="button" class="seg" id="temp-unit-f" data-action="weather.unitF" aria-pressed="false">°F</button>
+                </div>
+              </div>
             </div>
-          </div>
-          <p class="hint">A wallpaper refresh is not an engine start. The default never replays the ignition on reload.</p>
-        </div>
-      </details>
+          </details>
 
-      <!-- Lighting -->
-      <details class="panel-group">
-        <summary>Lighting &amp; transitions</summary>
-        <div class="group-body">
-          <div class="field">
-            <label class="field-label" for="auto-scene-setting">Follow the clock</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="auto-scene-setting" data-action="scene.auto" role="switch" aria-checked="true"><span></span></button>
-            </div>
-          </div>
-          <div class="field">
-            <label class="field-label" for="headlights-setting">Headlights</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="headlights-setting" data-action="scene.headlights" role="switch" aria-checked="false"><span></span></button>
-            </div>
-          </div>
-          <label class="field" for="transition-speed">
-            <span class="field-label">Crossfade speed</span>
-            <input type="range" id="transition-speed" class="slider" min="300" max="4000" step="100" value="1600" />
-            <output id="transition-speed-out" class="value-label">1.6 s</output>
-          </label>
-        </div>
-      </details>
+          <!-- Custom Framing & Complete Wallpaper -->
+          <details class="panel-group">
+            <summary>Custom Framing &amp; Complete Wallpaper</summary>
+            <div class="group-body">
+              <div class="field">
+                <span class="field-label">Scene mode</span>
+                <div class="segmented" role="radiogroup" aria-label="Scene mode">
+                  <button type="button" class="seg" data-action="mode.scene" aria-pressed="true">Scheduled / Studio</button>
+                  <button type="button" class="seg" data-action="mode.custom" aria-pressed="false">Custom Backdrop</button>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-label">Custom background</span>
+                <div class="field-control row">
+                  <button type="button" class="pill-btn" data-action="bg.import">Import background…</button>
+                  <button type="button" class="pill-btn" data-action="bg.clear">Use studio scenes</button>
+                </div>
+              </div>
+              <div id="bg-controls" class="sub-controls" hidden>
+                <div class="field">
+                  <span class="field-label">Fit</span>
+                  <div class="segmented" role="radiogroup" aria-label="Background fit">
+                    <button type="button" class="seg" data-action="bg.fit.cover" aria-pressed="true">Fill</button>
+                    <button type="button" class="seg" data-action="bg.fit.contain" aria-pressed="false">Fit</button>
+                  </div>
+                </div>
+                <label class="field" for="bg-scale">
+                  <span class="field-label">Scale</span>
+                  <input type="range" id="bg-scale" class="slider" min="100" max="200" step="1" value="100" />
+                  <output id="bg-scale-out" class="value-label">100%</output>
+                </label>
+                <label class="field" for="bg-x">
+                  <span class="field-label">Horizontal</span>
+                  <input type="range" id="bg-x" class="slider" min="0" max="100" step="1" value="50" />
+                  <output id="bg-x-out" class="value-label">50%</output>
+                </label>
+                <label class="field" for="bg-y">
+                  <span class="field-label">Vertical</span>
+                  <input type="range" id="bg-y" class="slider" min="0" max="100" step="1" value="50" />
+                  <output id="bg-y-out" class="value-label">50%</output>
+                </label>
+                <label class="field" for="bg-brightness">
+                  <span class="field-label">Brightness</span>
+                  <input type="range" id="bg-brightness" class="slider" min="30" max="130" step="1" value="100" />
+                  <output id="bg-brightness-out" class="value-label">100%</output>
+                </label>
+              </div>
 
-      <!-- Performance -->
-      <details class="panel-group">
-        <summary>Performance &amp; motion</summary>
-        <div class="group-body">
-          <div class="field">
-            <label class="field-label" for="motion-toggle">Scene motion</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="motion-toggle" data-action="perf.motion" role="switch" aria-checked="true"><span></span></button>
+              <div class="field">
+                <span class="field-label">Complete standalone design</span>
+                <div class="field-control row">
+                  <button type="button" class="pill-btn primary" data-action="design.import">Import design…</button>
+                  <button type="button" class="pill-btn" data-action="design.clear">Back to NIGHTDRIVE</button>
+                </div>
+              </div>
+              <div id="design-preview-wrap" class="design-preview-wrap" hidden>
+                <img id="design-preview" class="design-preview" alt="Preview of imported wallpaper" />
+                <div class="design-meta">
+                  <span id="design-name" class="value-label">—</span>
+                  <span id="design-size" class="value-label"></span>
+                </div>
+                <div class="field-control row">
+                  <button type="button" class="pill-btn primary" data-action="design.apply">Apply this design</button>
+                  <button type="button" class="pill-btn" data-action="design.discard">Discard</button>
+                </div>
+              </div>
             </div>
-          </div>
-          <div class="field">
-            <label class="field-label" for="particles-toggle">Dust motes</label>
-            <div class="field-control">
-              <button type="button" class="switch" id="particles-toggle" data-action="perf.particles" role="switch" aria-checked="true"><span></span></button>
-            </div>
-          </div>
-          <p class="hint" id="motion-hint">Respects your system's reduced-motion setting.</p>
-        </div>
-      </details>
+          </details>
 
-      <!-- Reset -->
-      <details class="panel-group">
-        <summary>Reset</summary>
-        <div class="group-body">
-          <p class="hint">Restores every setting and removes imported images from this device.</p>
-          <div class="field-control row">
-            <button type="button" class="pill-btn danger" data-action="app.reset">Restore defaults</button>
-          </div>
+          <!-- Drawer, Sound & Performance -->
+          <details class="panel-group" open>
+            <summary>Drawer, Sound &amp; Performance</summary>
+            <div class="group-body">
+              <div class="field">
+                <label class="field-label" for="drawer-enabled">Left-edge pointer approach sensor</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="drawer-enabled" data-action="drawer.enabled" role="switch" aria-checked="true"><span></span></button>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label" for="drawer-pinned-setting">Keep Quick Settings drawer pinned</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="drawer-pinned-setting" data-action="drawer.pin" role="switch" aria-checked="false"><span></span></button>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label" for="headlights-setting">Force headlights on</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="headlights-setting" data-action="scene.headlights" role="switch" aria-checked="false"><span></span></button>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label" for="motion-toggle">Scene motion &amp; effects</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="motion-toggle" data-action="perf.motion" role="switch" aria-checked="true"><span></span></button>
+                </div>
+              </div>
+              <div class="field">
+                <label class="field-label" for="particles-toggle">Headlight mist motes</label>
+                <div class="field-control">
+                  <button type="button" class="switch" id="particles-toggle" data-action="perf.particles" role="switch" aria-checked="true"><span></span></button>
+                </div>
+              </div>
+              <label class="field" for="volume-range-2">
+                <span class="field-label">Engine &amp; player volume</span>
+                <input type="range" id="volume-range-2" class="slider" min="0" max="100" step="1" value="70" />
+                <output id="volume-range-2-out" class="value-label">70%</output>
+              </label>
+              <div class="field">
+                <label class="field-label" for="startup-effect">Engine ignition sound</label>
+                <div class="field-control">
+                  <select id="startup-effect" class="select">
+                    <option value="manual">Only when I click Ignition</option>
+                    <option value="once">Once per app launch</option>
+                    <option value="always">Every wallpaper load</option>
+                  </select>
+                </div>
+              </div>
+              <p class="hint" id="motion-hint">Windows shortcut: <kbd>Ctrl+Alt+N</kbd> opens Quick Settings from the desktop; <kbd>Ctrl+B</kbd> toggles inside a browser.</p>
+              <div class="field-control row">
+                <button type="button" class="pill-btn danger" data-action="app.reset">Restore All Defaults</button>
+              </div>
+            </div>
+          </details>
         </div>
-      </details>
+      </div>
     </div>
   </section>
 
-  <!-- ══ TRANSIENT STATUS ══ -->
+  <!-- ══ TRANSIENT TOAST NOTIFICATION ══ -->
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 
-  <!-- ══ ICON SPRITE ══
-       A single set, 24 px grid, 1.5 px stroke, round caps/joins, drawn with
-       currentColor so one rule themes them all. Replacements cost one path. -->
+  <!-- ══ SHARED SVG ICON SPRITE ══ -->
   <svg class="sprite" aria-hidden="true" focusable="false" width="0" height="0">
-    <defs>
-      <g id="ic-base" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></g>
-    </defs>
-    <symbol id="i-wifi" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5a15 15 0 0 1 19 0"/><path d="M5.5 12a10.5 10.5 0 0 1 13 0"/><path d="M8.5 15.5a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.1" fill="currentColor" stroke="none"/></g></symbol>
-    <symbol id="i-bt" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7.5 17 16.5 12 21V3l5 4.5-10 9"/></g></symbol>
-    <symbol id="i-volume" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></g></symbol>
-    <symbol id="i-mute" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="m16 9.5 5 5"/><path d="m21 9.5-5 5"/></g></symbol>
-    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
-    <symbol id="i-beam" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5h5"/><path d="M8 16.5 20 9"/><path d="M8 16.5 20 14.5"/><path d="M8 16.5 20 19.5"/></g></symbol>
-    <symbol id="i-play" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6.5v11l9-5.5z"/></g></symbol>
-    <symbol id="i-pause" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6.5v11"/><path d="M14.5 6.5v11"/></g></symbol>
-    <symbol id="i-power" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v8"/><path d="M6.5 7a8 8 0 1 0 11 0"/></g></symbol>
-    <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.6"/><path d="M12 3v1.8M12 19.2V21M3 12h1.8M19.2 12H21M5.6 5.6l1.3 1.3M17.1 17.1l1.3 1.3M18.4 5.6l-1.3 1.3M6.9 17.1l-1.3 1.3"/></g></symbol>
-    <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3.5h6l-1 5 3 3v1.5H7V11.5l3-3z"/><path d="M12 13v7.5"/></g></symbol>
-    <symbol id="i-close" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></g></symbol>
-    <symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.8"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M18 6l-1.4 1.4M7.4 16.6 6 18"/></g></symbol>
-    <symbol id="i-exit" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.5H6.5v15H14"/><path d="M11 12h9"/><path d="m17 9 3 3-3 3"/></g></symbol>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5a15 15 0 0 1 19 0"/><path d="M5.5 12a10.5 10.5 0 0 1 13 0"/><path d="M8.5 15.5a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.2" fill="currentColor" stroke="none"/></g></symbol>
+    <symbol id="i-bt" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7.5 17 16.5 12 21V3l5 4.5-10 9"/></g></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></g></symbol>
+    <symbol id="i-mute" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="m16 9.5 5 5"/><path d="m21 9.5-5 5"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-beam" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15.5h5.5a3.5 3.5 0 0 0 0-7H3z"/><path d="M12 10l8-2"/><path d="M12 12.5h8.5"/><path d="M12 15l8 2.5"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><g fill="currentColor" stroke="none"><path d="M8.5 6.2v11.6L18.2 12z"/></g></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9.5 6.5v11"/><path d="M14.5 6.5v11"/></g></symbol>
+    <symbol id="i-prev" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6v12"/><path d="M18 6 9.5 12 18 18z"/></g></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6v12"/><path d="M6 6l8.5 6L6 18z"/></g></symbol>
+    <symbol id="i-music" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V6l11-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="17.5" cy="16" r="2.5"/></g></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.2l2 2.2H19.5A1.5 1.5 0 0 1 21 8.7v9.8a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></g></symbol>
+    <symbol id="i-layout" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><path d="M7 16h10"/></g></symbol>
+    <symbol id="i-image" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2.5"/><circle cx="8.5" cy="9.5" r="1.5"/><path d="m21 15-4.8-4.5L7 20"/></g></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 16l1.6-5.2A2 2 0 0 1 8.5 9.5h7a2 2 0 0 1 1.9 1.3L19 16"/><rect x="3" y="14" width="18" height="4.5" rx="1.5"/><circle cx="7" cy="18.5" r="1.5"/><circle cx="17" cy="18.5" r="1.5"/></g></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.8-3.8"/></g></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4"/><path d="m7.5 8.5 4.5-4.5 4.5 4.5"/><path d="M4 17.5v2A1.5 1.5 0 0 0 5.5 21h13a1.5 1.5 0 0 0 1.5-1.5v-2"/></g></symbol>
+    <symbol id="i-display" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M8.5 20h7"/><path d="M12 16.5V20"/></g></symbol>
+    <symbol id="i-reset" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.3-5.8L3.5 8.5"/><path d="M3.5 4v4.5H8"/></g></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v8"/><path d="M6.5 7a8 8 0 1 0 11 0"/></g></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.6"/><path d="M12 3v1.8M12 19.2V21M3 12h1.8M19.2 12H21M5.6 5.6l1.3 1.3M17.1 17.1l1.3 1.3M18.4 5.6l-1.3 1.3M6.9 17.1l-1.3 1.3"/></g></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3.5h6l-1 5 3 3v1.5H7V11.5l3-3z"/><path d="M12 13v7.5"/></g></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></g></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.8"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M18 6l-1.4 1.4M7.4 16.6 6 18"/></g></symbol>
+    <symbol id="i-exit" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.5H6.5v15H14"/><path d="M11 12h9"/><path d="m17 9 3 3-3 3"/></g></symbol>
   </svg>
 
-  <!-- Ignition sound. Plays only on a deliberate engine start (see app.js). -->
+  <!-- Engine ignition sound (manual trigger by default) + Local Music Player audio element -->
   <audio id="engine-audio" preload="auto" src="engine-start.wav"></audio>
+  <audio id="music-audio" preload="metadata"></audio>
 
-  <script src="script.js?v=8"></script>
-  <script src="app.js?v=1"></script>
+  <script src="script.js?v=10"></script>
+  <script src="app.js?v=10"></script>
 
-  <!-- ══ OFFLINE SUPPORT ══ Service worker pre-caches the engine (see sw.js).
-       Ignored by file:// and other insecure contexts — the app just runs online. -->
+  <!-- ══ OFFLINE SUPPORT ══ -->
   <script>
     if ('serviceWorker' in navigator && window.isSecureContext) {
       window.addEventListener('load', function () {

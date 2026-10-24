@@ -1,0 +1,537 @@
+{
+  "version": "3.0.0",
+  "packs": [
+    {
+      "id": "cascade-overlook",
+      "title": "Cascade Overlook (Integrated Coupe)",
+      "supportsCarOverlay": false,
+      "periods": {
+        "morning": "overlook-morning",
+        "day": "overlook-day",
+        "goldenHour": "overlook-golden",
+        "dusk": "overlook-dusk",
+        "night": "overlook-night",
+        "midnight": "overlook-midnight"
+      }
+    },
+    {
+      "id": "scenic-touring",
+      "title": "Scenic Touring (Car-Overlay Ready)",
+      "supportsCarOverlay": true,
+      "periods": {
+        "morning": "scenic-alpine-dawn",
+        "day": "scenic-coastal-day",
+        "goldenHour": "scenic-redwood-gold",
+        "dusk": "scenic-skyline-dusk",
+        "night": "scenic-starlight-night",
+        "midnight": "scenic-aurora-midnight"
+      }
+    }
+  ],
+  "wallpapers": [
+    {
+      "id": "overlook-night",
+      "title": "Cascade Overlook · Night",
+      "subtitle": "Moonlit alpine valley & widebody coupe",
+      "period": "night",
+      "pack": "cascade-overlook",
+      "src": "assets/night/scene.jpg",
+      "headlightsSrc": "assets/night/headlights.jpg",
+      "focus": [
+        "64%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": true,
+      "supportsCarOverlay": false,
+      "lighting": "moonlight",
+      "style": "cinematic",
+      "tags": [
+        "night",
+        "night sky",
+        "moon",
+        "mountain",
+        "valley",
+        "road",
+        "overlook",
+        "coupe",
+        "muscle",
+        "dark",
+        "signature"
+      ],
+      "source": "NIGHTDRIVE Studio Plate",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.599,
+      "sha1": "ec20cfaeed37fc57fd62b988dc16f9117fe68ccc"
+    },
+    {
+      "id": "overlook-dusk",
+      "title": "Cascade Overlook · Dusk",
+      "subtitle": "Cobalt twilight & last alpenglow",
+      "period": "dusk",
+      "pack": "cascade-overlook",
+      "src": "assets/dusk/scene.jpg",
+      "headlightsSrc": "assets/dusk/headlights.jpg",
+      "focus": [
+        "64%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": true,
+      "supportsCarOverlay": false,
+      "lighting": "twilight",
+      "style": "cinematic",
+      "tags": [
+        "dusk",
+        "twilight",
+        "blue hour",
+        "mountain",
+        "valley",
+        "road",
+        "overlook",
+        "coupe",
+        "muscle",
+        "signature"
+      ],
+      "source": "NIGHTDRIVE Studio Plate",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.599,
+      "sha1": "d98eaa95d1c2cd8a1d8fcc33cadbefeea3139a8b"
+    },
+    {
+      "id": "overlook-midnight",
+      "title": "Cascade Overlook · Midnight",
+      "subtitle": "Deep sapphire night & quiet highway",
+      "period": "midnight",
+      "pack": "cascade-overlook",
+      "src": "assets/midnight/scene.jpg",
+      "headlightsSrc": "assets/midnight/headlights.jpg",
+      "focus": [
+        "64%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": true,
+      "supportsCarOverlay": false,
+      "lighting": "deep-night",
+      "style": "cinematic",
+      "tags": [
+        "midnight",
+        "night sky",
+        "moon",
+        "mountain",
+        "road",
+        "overlook",
+        "dark",
+        "coupe",
+        "muscle",
+        "signature"
+      ],
+      "source": "NIGHTDRIVE Studio Plate",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.5987,
+      "sha1": "47cab0c82d8edd365e0c128088aa9faee9ad0023"
+    },
+    {
+      "id": "overlook-golden",
+      "title": "Cascade Overlook · Golden Hour",
+      "subtitle": "Warm sunset ridge & rim-lit tarmac",
+      "period": "goldenHour",
+      "pack": "cascade-overlook",
+      "src": "assets/golden-hour/scene.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "54%",
+        "70%"
+      ],
+      "hasIntegratedVehicle": true,
+      "supportsCarOverlay": false,
+      "lighting": "sunset",
+      "style": "warm-filmic",
+      "tags": [
+        "golden hour",
+        "sunset",
+        "amber",
+        "mountain",
+        "valley",
+        "road",
+        "coupe",
+        "muscle",
+        "signature"
+      ],
+      "source": "NIGHTDRIVE Studio Plate",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.6107,
+      "sha1": "1107200386f66805621a103264943749df672c47"
+    },
+    {
+      "id": "overlook-day",
+      "title": "Cascade Overlook · Day",
+      "subtitle": "Clear alpine daylight & pine valley",
+      "period": "day",
+      "pack": "cascade-overlook",
+      "src": "assets/day/scene.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "54%",
+        "70%"
+      ],
+      "hasIntegratedVehicle": true,
+      "supportsCarOverlay": false,
+      "lighting": "daylight",
+      "style": "natural",
+      "tags": [
+        "day",
+        "daylight",
+        "clear sky",
+        "mountain",
+        "pine",
+        "valley",
+        "road",
+        "coupe",
+        "muscle",
+        "signature"
+      ],
+      "source": "NIGHTDRIVE Studio Plate",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.6107,
+      "sha1": "926295bb2b90a97cb990c4da1918797b79013609"
+    },
+    {
+      "id": "overlook-morning",
+      "title": "Cascade Overlook · Morning",
+      "subtitle": "Rose-silver dawn mist over river bend",
+      "period": "morning",
+      "pack": "cascade-overlook",
+      "src": "assets/morning/scene.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "54%",
+        "70%"
+      ],
+      "hasIntegratedVehicle": true,
+      "supportsCarOverlay": false,
+      "lighting": "sunrise",
+      "style": "soft-dawn",
+      "tags": [
+        "morning",
+        "dawn",
+        "sunrise",
+        "mist",
+        "mountain",
+        "valley",
+        "road",
+        "coupe",
+        "muscle",
+        "signature"
+      ],
+      "source": "NIGHTDRIVE Studio Plate",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.6107,
+      "sha1": "b59a53c12db7c7b50a956c7e9f2e8ee358060e93"
+    },
+    {
+      "id": "scenic-alpine-dawn",
+      "title": "Glacier Pass · Dawn",
+      "subtitle": "Snow-dusted peaks & cloud-sea turnout (Car-Ready)",
+      "period": "morning",
+      "pack": "scenic-touring",
+      "src": "assets/library/alpine-dawn.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "58%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": false,
+      "supportsCarOverlay": true,
+      "lighting": "sunrise",
+      "style": "landscape",
+      "tags": [
+        "morning",
+        "dawn",
+        "sunrise",
+        "alpine",
+        "snow",
+        "mountain",
+        "mist",
+        "clouds",
+        "road",
+        "landscape",
+        "car-ready"
+      ],
+      "source": "NIGHTDRIVE Scenic Library",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.4727,
+      "sha1": "68f94527c68119bea50f437c6d7302799d956542"
+    },
+    {
+      "id": "scenic-coastal-day",
+      "title": "Pacific Headlands · Day",
+      "subtitle": "Coastal cliff highway & cerulean surf (Car-Ready)",
+      "period": "day",
+      "pack": "scenic-touring",
+      "src": "assets/library/coastal-highway-day.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "58%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": false,
+      "supportsCarOverlay": true,
+      "lighting": "daylight",
+      "style": "landscape",
+      "tags": [
+        "day",
+        "coastal",
+        "ocean",
+        "sea",
+        "cliff",
+        "highway",
+        "road",
+        "sky",
+        "landscape",
+        "car-ready"
+      ],
+      "source": "NIGHTDRIVE Scenic Library",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.4714,
+      "sha1": "07783f57c3314dcad56623e8d8f4e948fe44d577"
+    },
+    {
+      "id": "scenic-redwood-gold",
+      "title": "Sierra Canyon · Golden Hour",
+      "subtitle": "Amber canyon haze & pine crest pullout (Car-Ready)",
+      "period": "goldenHour",
+      "pack": "scenic-touring",
+      "src": "assets/library/redwood-canyon-gold.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "58%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": false,
+      "supportsCarOverlay": true,
+      "lighting": "sunset",
+      "style": "warm-filmic",
+      "tags": [
+        "golden hour",
+        "sunset",
+        "canyon",
+        "forest",
+        "pine",
+        "mountain",
+        "river",
+        "road",
+        "landscape",
+        "car-ready"
+      ],
+      "source": "NIGHTDRIVE Scenic Library",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.3477,
+      "sha1": "bad14964a420c3e09883d9145e0d1de5601386d2"
+    },
+    {
+      "id": "scenic-skyline-dusk",
+      "title": "Harbor Promenade · Dusk",
+      "subtitle": "Cobalt bayfront & illuminated city skyline (Car-Ready)",
+      "period": "dusk",
+      "pack": "scenic-touring",
+      "src": "assets/library/tokyo-skyline-dusk.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "58%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": false,
+      "supportsCarOverlay": true,
+      "lighting": "twilight",
+      "style": "urban",
+      "tags": [
+        "dusk",
+        "twilight",
+        "city",
+        "skyline",
+        "urban",
+        "bridge",
+        "waterfront",
+        "bay",
+        "road",
+        "car-ready"
+      ],
+      "source": "NIGHTDRIVE Scenic Library",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.5892,
+      "sha1": "688bad8f9659445c3dce800895af9827d836f5e4"
+    },
+    {
+      "id": "scenic-starlight-night",
+      "title": "Starlight Fjord · Night",
+      "subtitle": "Moonlit mountain tarn & starry sky (Car-Ready)",
+      "period": "night",
+      "pack": "scenic-touring",
+      "src": "assets/library/starlight-ridge-night.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "58%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": false,
+      "supportsCarOverlay": true,
+      "lighting": "moonlight",
+      "style": "night-sky",
+      "tags": [
+        "night",
+        "night sky",
+        "stars",
+        "moon",
+        "fjord",
+        "lake",
+        "mountain",
+        "road",
+        "landscape",
+        "car-ready"
+      ],
+      "source": "NIGHTDRIVE Scenic Library",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.6094,
+      "sha1": "ab8a774ff517edc1a0d560e81b2cd2131e25f7f3"
+    },
+    {
+      "id": "scenic-aurora-midnight",
+      "title": "Aurora Borealis · Midnight",
+      "subtitle": "Emerald northern lights over arctic pass (Car-Ready)",
+      "period": "midnight",
+      "pack": "scenic-touring",
+      "src": "assets/library/aurora-pass-midnight.jpg",
+      "headlightsSrc": null,
+      "focus": [
+        "58%",
+        "68%"
+      ],
+      "hasIntegratedVehicle": false,
+      "supportsCarOverlay": true,
+      "lighting": "aurora",
+      "style": "night-sky",
+      "tags": [
+        "midnight",
+        "night sky",
+        "aurora",
+        "northern lights",
+        "arctic",
+        "snow",
+        "mountain",
+        "road",
+        "landscape",
+        "car-ready"
+      ],
+      "source": "NIGHTDRIVE Scenic Library",
+      "resolution": "1376x768",
+      "ridgeMinY": 0.5399,
+      "sha1": "4c778a278131cea57747ba2d27b0957e18ee798b"
+    }
+  ],
+  "cars": [
+    {
+      "id": "scene-default",
+      "title": "Scene Native",
+      "subtitle": "Use each wallpaper's native scene (integrated Challenger on Cascade Overlook, pure landscape on Scenic Touring)",
+      "category": "native",
+      "overlaySrc": null,
+      "tags": [
+        "default",
+        "native",
+        "integrated",
+        "clean"
+      ],
+      "lamps": null,
+      "beamTarget": null
+    },
+    {
+      "id": "obsidian-muscle",
+      "title": "Obsidian Widebody Coupe",
+      "subtitle": "Matte-satin black widebody muscle coupe · twin amber halo rings",
+      "category": "muscle",
+      "overlaySrc": "assets/cars/obsidian-muscle-coupe.png",
+      "resolution": "1376x768",
+      "tags": [
+        "muscle",
+        "widebody",
+        "matte black",
+        "american",
+        "halo",
+        "coupe"
+      ],
+      "lamps": [
+        [
+          606,
+          588
+        ],
+        [
+          768,
+          591
+        ]
+      ],
+      "beamTarget": [
+        255,
+        738
+      ]
+    },
+    {
+      "id": "stealth-gt",
+      "title": "Stealth GT Fastback",
+      "subtitle": "Dark gunmetal grand-tourer performance coupe · slim LED blades",
+      "category": "coupe",
+      "overlaySrc": "assets/cars/stealth-gt-fastback.png",
+      "resolution": "1376x768",
+      "tags": [
+        "coupe",
+        "gt",
+        "grand tourer",
+        "fastback",
+        "gunmetal",
+        "performance"
+      ],
+      "lamps": [
+        [
+          612,
+          600
+        ],
+        [
+          818,
+          591
+        ]
+      ],
+      "beamTarget": [
+        275,
+        742
+      ]
+    },
+    {
+      "id": "phantom-apex",
+      "title": "Phantom Apex Carbon",
+      "subtitle": "Low-slung gloss-obsidian mid-engine sports car · laser LEDs",
+      "category": "sports",
+      "overlaySrc": "assets/cars/phantom-apex-supercar.png",
+      "resolution": "1376x768",
+      "tags": [
+        "sports",
+        "supercar",
+        "mid-engine",
+        "carbon",
+        "obsidian",
+        "aerodynamic"
+      ],
+      "lamps": [
+        [
+          645,
+          602
+        ],
+        [
+          848,
+          592
+        ]
+      ],
+      "beamTarget": [
+        295,
+        745
+      ]
+    }
+  ]
+}

@@ -46,11 +46,11 @@ public static class DesktopInteraction
     private static extern bool SetWindowPos(
         IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool RegisterHotKey(IntPtr hWnd, int id, uint fsModifiers, uint vk);
+    [DllImport("user32.dll", EntryPoint = "RegisterHotKey", SetLastError = true)]
+    private static extern bool RegisterHotKeyNative(IntPtr hWnd, int id, uint fsModifiers, uint vk);
 
-    [DllImport("user32.dll", SetLastError = true)]
-    private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
+    [DllImport("user32.dll", EntryPoint = "UnregisterHotKey", SetLastError = true)]
+    private static extern bool UnregisterHotKeyNative(IntPtr hWnd, int id);
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool IsWindow(IntPtr hWnd);
@@ -90,6 +90,17 @@ public static class DesktopInteraction
         lock (Gate)
         {
             return hwnd != IntPtr.Zero && hwnd == _attachedHwnd && _workerW != IntPtr.Zero;
+        }
+    }
+
+    public static bool IsRaised
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return _raised;
+            }
         }
     }
 
@@ -205,7 +216,7 @@ public static class DesktopInteraction
     {
         try
         {
-            bool registered = RegisterHotKey(hwnd, id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_N);
+            bool registered = RegisterHotKeyNative(hwnd, id, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, VK_N);
             Log($"RegisterHotKey Ctrl+Alt+N: result={registered}, error={Marshal.GetLastWin32Error()}");
             return registered;
         }
@@ -220,7 +231,7 @@ public static class DesktopInteraction
     {
         try
         {
-            bool unregistered = UnregisterHotKey(hwnd, id);
+            bool unregistered = UnregisterHotKeyNative(hwnd, id);
             Log($"UnregisterHotKey Ctrl+Alt+N: result={unregistered}, error={Marshal.GetLastWin32Error()}");
             return unregistered;
         }
