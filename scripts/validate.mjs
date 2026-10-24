@@ -359,7 +359,9 @@ console.log('Engine boot (executed, not just parsed)');
 // leaving only the CSS gradient placeholder on screen. Only executing the
 // script catches that class of bug.
 try {
-  const report = await runEngineSmoke();
+  // runUI loads app.js into the same sandbox and clicks every control, so a
+  // dead button fails here rather than on someone's desktop.
+  const report = await runEngineSmoke({ runUI: true });
   if (report.ok) ok('script.js boots and runs animation frames');
   else {
     fail('boot error: ' + report.errors.map((e) => e.message).join('; '));
@@ -372,6 +374,24 @@ try {
   check((report.sceneSrcs || []).length > 0 && report.sceneSrcs.every((s) => s.endsWith('.jpg')),
     `scene images resolved from disk (${(report.sceneSrcs || []).join(', ') || 'none'})`);
   check((report.framesRun || 0) > 0, 'animation loop runs');
+
+  // ── Interface layer, executed ──────────────────────────────────────────────
+  const ui = report.ui || {};
+  check(ui.loaded === true, 'app.js runs against the real engine');
+  check((ui.clicked || 0) >= 30, `${ui.clicked || 0} controls were clicked`);
+  check((ui.failed || []).length === 0,
+    (ui.failed || []).length
+      ? 'controls threw: ' + ui.failed.map((f) => `${f.action} (${f.message})`).join(', ')
+      : 'no control throws when clicked');
+  check(ui.delegation && ui.delegation.changed === true,
+    'a delegated click reaches the engine and changes its state');
+
+  // Controls whose whole job is to change something must actually do it.
+  const mustChange = ['clock.format', 'clock.visible', 'scene.next', 'scene.auto',
+    'audio.mute', 'perf.motion', 'drawer.pin'];
+  const inert = mustChange.filter((name) => !(ui.effects || {})[name]);
+  check(inert.length === 0,
+    inert.length ? `controls with no effect: ${inert.join(', ')}` : `all ${mustChange.length} stateful controls change state`);
 
   // Depth clock geometry, computed by the engine's own pure functions.
   const geo = report.geo || {};

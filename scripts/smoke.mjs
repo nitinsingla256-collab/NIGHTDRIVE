@@ -101,6 +101,79 @@ function makeElement(tagName = 'div', opts = {}) {
 }
 
 /**
+ * Load the interface layer into the same sandbox and click every control.
+ *
+ * The engine and the UI are separate files wired together by `window.ND` and a
+ * delegated `[data-action]` handler. A typo in either half is invisible to a
+ * syntax check and to the static graph check in validate.mjs; running the real
+ * handler is the only thing that proves a button does something.
+ */
+async function exerciseInterface(context, recordError) {
+  const source = readFileSync(join(root, 'engine/app.js'), 'utf8');
+  const report = { loaded: false, clicked: 0, failed: [] };
+
+  try {
+    vm.runInContext(source, context, { filename: 'engine/app.js' });
+    report.loaded = true;
+  } catch (e) {
+    recordError('app.js init: ' + e.message, e.stack);
+    return report;
+  }
+
+  // Let the interface's own init settle (capability probe, hydrate).
+  await new Promise((resolve) => setTimeout(resolve, 40));
+
+  const names = [...new Set([...source.matchAll(/^\s*'([a-z]+\.[a-zA-Z.]+)':/gm)].map((m) => m[1]))];
+  report.effects = {};
+  const snapshot = () => JSON.stringify({ s: context.window.ND.settings, st: context.window.ND.state() });
+  for (const name of names) {
+    const before = snapshot();
+    const el = makeElement('button');
+    // The delegated handler reads the attribute, not the dataset property.
+    el.setAttribute('data-action', name);
+    el.closest = (sel) => (sel === '[data-action]' ? el : null);
+    try {
+      context.document.dispatch('click', {
+        target: el,
+        currentTarget: context.document,
+        preventDefault() {},
+        stopPropagation() {}
+      });
+      report.clicked++;
+      // Which controls provably changed something, so the test can require it
+      // for the ones that must have an effect.
+      report.effects[name] = snapshot() !== before;
+    } catch (e) {
+      report.failed.push({ action: name, message: e.message });
+      recordError(`${name}: ${e.message}`, e.stack);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2));
+  }
+
+  // Proof that the delegated handler really reached the engine, rather than
+  // the click being swallowed somewhere: toggle the 24-hour switch and read the
+  // setting back through the engine's own state.
+  const probe = makeElement('button');
+  probe.setAttribute('data-action', 'clock.format');
+  probe.closest = (sel) => (sel === '[data-action]' ? probe : null);
+  report.clickListeners = (context.document._listeners.get('click') || []).length;
+  const before = context.window.ND.state().clock24;
+  context.document.dispatch('click', {
+    target: probe,
+    currentTarget: context.document,
+    preventDefault() {},
+    stopPropagation() {}
+  });
+  const after = context.window.ND.state().clock24;
+  report.delegation = { before, after, changed: before !== after };
+
+  // The UI stores imported images in IndexedDB; there is none here, so the
+  // memory fallback should have been chosen rather than throwing.
+  report.storageMode = context.window.__ndStorageMode || null;
+  return report;
+}
+
+/**
  * Boot the engine. Returns a promise resolving to a report:
  *   { ok, errors: [...], hudText, sceneSrcs, layerCount }
  */
@@ -113,7 +186,8 @@ export async function runEngineSmoke({
   // Fixed wall-clock time (local) so results never depend on when the suite
   // runs. 10:00 is solidly inside the "day" period, so no blend window is open
   // and both layers hold the same period unless a test says otherwise.
-  clock = [10, 0]
+  clock = [10, 0],
+  runUI = false
 } = {}) {
   const source = readFileSync(join(root, 'engine/script.js'), 'utf8');
   const errors = [];
@@ -158,11 +232,15 @@ export async function runEngineSmoke({
   const layerA = makeLayer('a');
   const layerB = makeLayer('b');
 
+  const documentTitle = makeElement('title');
+  const documentListeners = new Map();
   const document = {
     documentElement: makeElement('html'),
     body: makeElement('body'),
+    title: 'NIGHTDRIVE',
     readyState: 'complete',
     hidden: false,
+    activeElement: null,
     getElementById: (id) => getId(id),
     querySelector(sel) {
       if (sel === '[data-layer="a"]') return layerA;
@@ -172,8 +250,20 @@ export async function runEngineSmoke({
     querySelectorAll() { return []; },
     createElement(tag) { return makeElement(tag); },
     createTextNode(t) { return { nodeType: 3, textContent: t }; },
-    addEventListener() {},
-    removeEventListener() {}
+    addEventListener(type, fn) {
+      if (!documentListeners.has(type)) documentListeners.set(type, []);
+      documentListeners.get(type).push(fn);
+    },
+    removeEventListener(type, fn) {
+      const list = documentListeners.get(type) || [];
+      const i = list.indexOf(fn);
+      if (i >= 0) list.splice(i, 1);
+    },
+    dispatch(type, event = {}) {
+      (documentListeners.get(type) || []).forEach((fn) => fn(event));
+    },
+    _listeners: documentListeners,
+    _title: documentTitle
   };
 
   // ── Image loading: succeed asynchronously so asset promises resolve ──────
@@ -299,7 +389,19 @@ export async function runEngineSmoke({
     innerWidth: viewport[0],
     innerHeight: viewport[1],
     devicePixelRatio: 2,
-    isSecureContext: false
+    isSecureContext: false,
+    // Preferences are small key/value pairs; IndexedDB is deliberately absent
+    // so the memory fallback path is the one under test.
+    localStorage: (() => {
+      const store = new Map();
+      return {
+        getItem: (k) => (store.has(k) ? store.get(k) : null),
+        setItem: (k, v) => store.set(k, String(v)),
+        removeItem: (k) => store.delete(k),
+        clear: () => store.clear(),
+        get length() { return store.size; }
+      };
+    })()
   };
   sandbox.window = windowStub;
   sandbox.globalThis = sandbox;
@@ -333,6 +435,16 @@ export async function runEngineSmoke({
     try { fn(); } catch (e) { recordError(e.message, e.stack); }
   }
 
+  // Optionally exercise the interface layer after the engine is up.
+  let ui = null;
+  if (runUI) {
+    ui = await exerciseInterface(context, recordError);
+    // Drain whatever the clicks queued (toasts, delayed capability probes).
+    for (const fn of timers.splice(0, timers.length)) {
+      try { fn(); } catch (e) { recordError('ui timer: ' + e.message, e.stack); }
+    }
+  }
+
   const sceneSrcs = [layerA, layerB]
     .map((layer) => layer._kids.get('.scene-img').getAttribute('src') || layer._kids.get('.scene-img').src)
     .filter(Boolean);
@@ -363,6 +475,7 @@ export async function runEngineSmoke({
     ok: errors.length === 0,
     errors,
     consoleErrors,
+    ui,
     geo: {
       polygon: call('ridgePolygon', [[0, 0.5], [1, 0.6]]),
       peak: call('ridgeAt', [[0, 0.4], [1, 0.6]], 0.5),
