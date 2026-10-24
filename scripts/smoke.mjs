@@ -347,10 +347,28 @@ export async function runEngineSmoke({
     hasCar: layer.classList.contains('layer--has-car')
   });
 
+  // Geometry used by the depth clock. These are pure functions exported by
+  // the engine, so they can be exercised without laying out a page.
+  const call = (name, ...args) => {
+    try {
+      const fn = sandbox[name];
+      return typeof fn === 'function' ? fn(...args) : null;
+    } catch (e) {
+      recordError('geometry ' + name + ': ' + e.message, e.stack);
+      return null;
+    }
+  };
+
   return {
     ok: errors.length === 0,
     errors,
     consoleErrors,
+    geo: {
+      polygon: call('ridgePolygon', [[0, 0.5], [1, 0.6]]),
+      peak: call('ridgeAt', [[0, 0.4], [1, 0.6]], 0.5),
+      cover1920: call('plateRect', 1376, 768, 1920, 1080, 0.62, 0.74),
+      coverTall: call('plateRect', 1376, 768, 1080, 1920, 0.58, 0.74)
+    },
     hudText: getId('hud-time').textContent,
     hudDate: getId('hud-date').textContent,
     sceneSrcs,

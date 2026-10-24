@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 // Project sanity checks — run by `npm test` and CI.
+import { createHash } from 'node:crypto';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -59,7 +60,7 @@ console.log('Service worker (offline support)');
 const sw = readFileSync(join(engine, 'sw.js'), 'utf8');
 try { new vm.Script(sw, { filename: 'sw.js' }); ok('sw.js parses'); } catch (e) { fail('sw.js syntax: ' + e.message); }
 const cacheName = (sw.match(/const CACHE_NAME = '([^']+)'/) || [])[1];
-check(cacheName === 'nightdrive-v1.6.0', `cache name is ${cacheName || 'missing'}`);
+check(cacheName === 'nightdrive-v1.7.0', `cache name is ${cacheName || 'missing'}`);
 check(/serviceWorker/.test(html) && /register\(\s*['"]sw\.js['"]/.test(html), 'index.html registers the service worker');
 
 const preList = sw.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
@@ -200,6 +201,159 @@ const ignore = readFileSync(join(root, '.gitignore'), 'utf8');
 check(/hosts\/windows\/\*\*\/bin\//.test(ignore) && /hosts\/windows\/\*\*\/obj\//.test(ignore),
       '.gitignore covers Windows host build output');
 
+console.log('Depth clock data');
+{
+  const ridgePath = join(engine, 'assets/ridges.json');
+  check(existsSync(ridgePath), 'assets/ridges.json exists');
+  let ridges = null;
+  try { ridges = JSON.parse(readFileSync(ridgePath, 'utf8')); }
+  catch (e) { fail('ridges.json parses: ' + e.message); }
+  if (ridges) {
+    const ids = Object.keys(ridges);
+    check(ids.length === 6, `all six periods have a measured skyline (${ids.join(', ')})`);
+    let badShape = null;
+    let badX = null;
+    for (const id of ids) {
+      const r = ridges[id];
+      if (!r || !Array.isArray(r.ridge) || r.ridge.length < 8) { badShape = id; continue; }
+      const xs = r.ridge.map((p) => p[0]);
+      const ys = r.ridge.map((p) => p[1]);
+      if (xs[0] !== 0 || Math.abs(xs[xs.length - 1] - 1) > 1e-6 || xs.some((x, i) => i && x <= xs[i - 1])) badX = id;
+      if (ys.some((y) => y < 0 || y > 1)) badShape = id;
+      if (!r.clock || typeof r.clock.x !== 'number' || r.clock.x < 0.1 || r.clock.x > 0.75) badShape = id;
+    }
+    check(!badShape, badShape ? `malformed ridge data: ${badShape}` : 'ridge data is well formed');
+    check(!badX, badX ? `ridge x is not monotonic: ${badX}` : 'ridge x runs 0 -> 1 monotonically');
+    // A skyline measured from an older version of a plate would cut the clock
+    // at the wrong place; the hash proves the two still match.
+    const stale = ids.filter((id) => {
+      const file = join(engine, ridges[id].source);
+      if (!existsSync(file)) return true;
+      return createHash('sha1').update(readFileSync(file)).digest('hex') !== ridges[id].sourceSha1;
+    });
+    check(stale.length === 0,
+      stale.length
+        ? `ridge is stale for ${stale.join(', ')} - rerun: python3 scripts/build-ridges.py`
+        : 'every skyline matches the plate it was measured from');
+
+    // A ridge that never dips below the sky would leave the clock unoccluded.
+    const spans = ids.map((id) => Math.max(...ridges[id].ridge.map((p) => p[1])));
+    check(Math.max(...spans) > 0.4, `skylines reach below the clock (lowest ridge ${Math.max(...spans).toFixed(2)})`);
+  }
+  // The layer stack is what makes the effect work: clock above the scene,
+  // foreground above the clock, HUD above the foreground.
+  const z = (sel) => {
+    const re = new RegExp('\\' + sel + '\\s*\\{[^}]*?z-index:\\s*(\\d+)');
+    const m = css.match(re);
+    return m ? Number(m[1]) : null;
+  };
+  const zClock = z('.clock');
+  const zFg = z('.foreground');
+  const zHud = z('.hud');
+  check(zClock === 5 && zFg === 10 && zHud === 15,
+    `clock (${zClock}) < foreground (${zFg}) < hud (${zHud})`);
+  check(/\.clock \{[^}]*translate\(-50%, -70%\)/.test(css) || /translate\(-50%, -70%\)/.test(css),
+    'clock box is lifted by 70 % so its foot sits behind the ridge');
+}
+
+console.log('Interface wiring (no browser required)');
+{
+  // There is no browser in CI, so the interface is checked structurally:
+  // every control in the markup must name an action that app.js implements,
+  // every id the scripts reach for must exist, and every control must be
+  // reachable by keyboard and screen readers. A dead button is caught here
+  // rather than by clicking it.
+  const appSrc = readFileSync(join(engine, 'app.js'), 'utf8');
+  const htmlSrc = readFileSync(join(engine, 'index.html'), 'utf8');
+
+  try { new vm.Script(appSrc, { filename: 'app.js' }); ok('app.js parses'); }
+  catch (e) { fail('app.js syntax: ' + e.message); }
+
+  // Both `'x.y': function () {...}` and `'x.y': someFn` are real handlers.
+  const declared = new Set([...appSrc.matchAll(/^\s*'([a-z]+\.[a-zA-Z.]+)':\s*(?:function|\w+)/gm)].map((m) => m[1]));
+  const used = [...htmlSrc.matchAll(/data-action="([^"]+)"/g)].map((m) => m[1]);
+  const missing = [...new Set(used)].filter((a) => !declared.has(a));
+  check(declared.size >= 20, `${declared.size} control actions implemented`);
+  check(used.length >= 20, `${used.length} controls wired in the markup`);
+  check(missing.length === 0, missing.length ? `controls with no handler: ${missing.join(', ')}` : 'every control has a handler');
+
+  // Ids the scripts ask for must exist in the markup (or be created by script).
+  const scriptIds = new Set();
+  for (const src of [js, appSrc]) {
+    for (const m of src.matchAll(/getElementById\('([^']+)'\)/g)) scriptIds.add(m[1]);
+  }
+  const htmlIds = new Set([...htmlSrc.matchAll(/id="([^"]+)"/g)].map((m) => m[1]));
+  // Every id either engine script reaches for must exist in the markup. The
+  // file input is built by app.js, not authored, so it is named explicitly
+  // rather than excusing every missing id.
+  const generated = new Set(['file-input']);
+  const dangling = [...scriptIds].filter((id) => !htmlIds.has(id) && !generated.has(id));
+  check(dangling.length === 0, dangling.length ? `ids referenced but absent: ${dangling.join(', ')}` : `${scriptIds.size} script-referenced ids all exist`);
+
+  // Accessibility: an icon-only control must carry a label; a control with
+  // visible text, or one associated with a <label for>, is already labelled.
+  const labelledByFor = new Set([...htmlSrc.matchAll(/<label[^>]*\bfor="([^"]+)"/g)].map((m) => m[1]));
+  const buttons = [...htmlSrc.matchAll(/<button\b([^>]*)>([\s\S]*?)<\/button>/g)];
+  const unlabelled = buttons.filter(([, attrs, inner]) => {
+    if (/aria-label=|title=|aria-labelledby=/.test(attrs)) return false;
+    const id = (attrs.match(/\bid="([^"]+)"/) || [])[1];
+    if (id && labelledByFor.has(id)) return false;
+    return inner.replace(/<[^>]*>/g, '').trim().length === 0;
+  });
+  check(unlabelled.length === 0,
+    unlabelled.length
+      ? `${unlabelled.length} unlabelled icon button(s): ${unlabelled.map(([, a]) => (a.match(/id="([^"]+)"/) || [, '?'])[1]).join(', ')}`
+      : `all ${buttons.length} buttons are labelled`);
+
+  check(!/\sonclick=/.test(htmlSrc), 'no inline onclick handlers (listeners live in app.js)');
+  // Icon sprite: every `<use>` must resolve, including the ones swapped in at
+  // runtime (the play/pause state).
+  const symbols = new Set([...htmlSrc.matchAll(/<symbol[^>]*\bid="([^"]+)"/g)].map((m) => m[1]));
+  const useRefs = new Set([
+    ...[...htmlSrc.matchAll(/<use[^>]*href="#([^"]+)"/g)].map((m) => m[1]),
+    ...[...appSrc.matchAll(/href',\s*'#([\w-]+)'/g)].map((m) => m[1])
+  ]);
+  const missingSymbols = [...useRefs].filter((id) => !symbols.has(id));
+  check(missingSymbols.length === 0,
+    missingSymbols.length ? `icons with no symbol: ${missingSymbols.join(', ')}` : `${symbols.size} symbols, every reference resolves`);
+  const iconUses = [...htmlSrc.matchAll(/<svg class="ic"[^>]*>\s*<use/g)];
+  check(iconUses.length >= 10, `${iconUses.length} icon buttons use the shared sprite`);
+
+  // The UI talks to the engine through window.ND. Every method it calls must
+  // exist, or a control dies with "ND.x is not a function" at click time.
+  const ndBlock = js.match(/window\.ND = \{([\s\S]*?)\n\};/);
+  if (!ndBlock) fail('window.ND is not defined');
+  else {
+    const api = new Set([...ndBlock[1].matchAll(/^\s*([A-Za-z_]\w*)\s*[:(]/gm)].map((m) => m[1]));
+    const calls = new Set([...appSrc.matchAll(/\bND\.(\w+)/g)].map((m) => m[1]));
+    const missingApi = [...calls].filter((n) => !api.has(n));
+    check(missingApi.length === 0,
+      missingApi.length ? `app.js calls missing engine API: ${missingApi.join(', ')}` : `${calls.size}/${api.size} engine APIs used, all defined`);
+  }
+
+  check(htmlIds.has('drawer-trigger') && htmlIds.has('drawer') && htmlIds.has('panel') && htmlIds.has('foreground'),
+    'drawer, settings panel, clock layer and foreground occluder are present');
+
+  // The startup sequence must not run on boot: a refresh is not an engine start.
+  const bootCall = /(?<!\.)\brunCinematicStartup\(\)/.test(js.replace(/function runCinematicStartup/, ''));
+  check(!bootCall, 'boot does not call the cinematic startup sequence');
+  check(/maybeAutoStartup\(\);/.test(js), 'boot consults the saved startup preference instead');
+  check(/startupEffect:\s*'manual'/.test(js), "startup effects default to 'manual'");
+
+  // Boot order: the deferred call at the bottom of the file must come after the
+  // settings store is created, or the engine throws on first paint.
+  const settingsAt = js.indexOf('const SETTINGS = loadSettings()');
+  const bootCallAt = js.search(/(?:^|\n)\s*boot\(\);/);
+  check(settingsAt > 0 && bootCallAt > settingsAt,
+    'boot runs after the settings store exists');
+
+  // Duplicate ids silently break getElementById in ways no click test would
+  // explain, so the markup is checked once here.
+  const allIds = [...htmlSrc.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+  const dupes = allIds.filter((id, i) => allIds.indexOf(id) !== i);
+  check(dupes.length === 0, dupes.length ? `duplicate ids: ${[...new Set(dupes)].join(', ')}` : `${allIds.length} ids, all unique`);
+}
+
 console.log('Engine boot (executed, not just parsed)');
 // A top-level ReferenceError used to abort script.js before the first frame,
 // leaving only the CSS gradient placeholder on screen. Only executing the
@@ -211,11 +365,24 @@ try {
     fail('boot error: ' + report.errors.map((e) => e.message).join('; '));
     for (const e of report.errors) console.error('      ' + (e.stack || e.message).split('\n').slice(0, 4).join('\n      '));
   }
-  check(/\d{2}:\d{2} (AM|PM)/.test(report.hudText || ''), `clock renders (${report.hudText || 'empty'})`);
+  // 24-hour by default: two digits, a colon, two digits, no AM/PM suffix.
+  check(/^\d{2}:\d{2}$/.test(report.hudText || ''),
+    `clock renders 24-hour by default (${report.hudText || 'empty'})`);
   check(/\b\d{4}\b/.test(report.hudDate || ''), 'date renders');
   check((report.sceneSrcs || []).length > 0 && report.sceneSrcs.every((s) => s.endsWith('.jpg')),
     `scene images resolved from disk (${(report.sceneSrcs || []).join(', ') || 'none'})`);
   check((report.framesRun || 0) > 0, 'animation loop runs');
+
+  // Depth clock geometry, computed by the engine's own pure functions.
+  const geo = report.geo || {};
+  check(geo.polygon === 'polygon(0% 100%, 0.000% 50.000%, 100.000% 60.000%, 100% 100%)',
+    'ridge polygon closes along the bottom edge');
+  check(Math.abs(geo.peak - 0.5) < 1e-6, 'ridge height interpolates between sample points');
+  const c = geo.cover1920 || {};
+  check(c.width === 1935 && c.height === 1080 && Math.abs(c.left + 9.3) < 0.01,
+    'plate rect matches object-fit: cover at 1920x1080');
+  const t = geo.coverTall || {};
+  check(t.width === 3440 && t.height === 1920, 'portrait window gets the cover rectangle it expects');
   check(report.layers.every((l) => /%/.test(l.focus)),
     `landscape plates use a car-aware focal crop (${report.layers.map((l) => l.focus).join(' / ')})`);
   check(report.layers.every((l) => !l.contain),
