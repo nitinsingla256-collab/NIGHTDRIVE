@@ -81,12 +81,42 @@ body {
   height: 100%;
 }
 
-/* Raster images: cover + center, hidden until loaded */
+/* Raster images: cover + focal crop, hidden until loaded.
+   `image-rendering: auto` is explicit so no engine or later rule can switch
+   the scene to nearest-neighbour / pixelated scaling, and the transform-free
+   element lets the compositor resample with a proper filter.
+   `--focus` is set per period by script.js from the asset table, so narrow and
+   portrait viewports crop toward the car rather than the middle of the valley. */
 .scene-img,
 .headlight-img {
   object-fit: cover;
-  object-position: center;
+  object-position: var(--focus, 62% 74%);
   display: none;
+  image-rendering: auto;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+/* Tall assets: never stretch and never blindly crop. The frame is shown whole
+   (object-fit: contain) over a blurred, dimmed copy of itself, so a portrait
+   photograph reads as a deliberate composition on a wide screen instead of
+   being blown up to show a third of its height. script.js adds this class when
+   the loaded image is taller than 4:5. */
+.scene-img--contain {
+  object-fit: contain;
+  object-position: center;
+}
+
+.layer--contain::before {
+  content: '';
+  position: absolute;
+  inset: -40px;
+  background-image: var(--plate-url, none);
+  background-size: cover;
+  background-position: center;
+  filter: blur(38px) brightness(0.62) saturate(0.9);
+  transform: scale(1.06);
+  z-index: -1;
 }
 
 .svg-scene svg,
@@ -100,11 +130,40 @@ body {
   display: block;
 }
 
-/* Headlights overlay — screen blend so black bg disappears */
+/* Optional transparent car layer. Sits above the plate and below the beams so
+   the volumetric headlight cone still falls in front of it. Hidden by default:
+   it only appears when a period actually supplies a car image, which keeps the
+   car and the landscape independently replaceable without shipping anything
+   today. `--car-fit` lets a period describe how its car layer should be placed
+   (its own crop box) instead of guessing a single global transform. */
+.car-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: var(--car-fit, contain);
+  object-position: var(--car-position, 50% 50%);
+  display: none;
+  image-rendering: auto;
+  pointer-events: none;
+  /* Above the plate, below the beams: a car layer is a photograph of a car, so
+     the volumetric cone has to fall in front of it rather than be occluded by
+     the transparent cut-out. */
+  z-index: 1;
+}
+
+.car-img.is-loaded {
+  display: block;
+}
+
+/* Headlights overlay — screen blend so black bg disappears.
+   z-index 2 keeps the beams in front of an optional .car-img layer (z-index 1)
+   and behind the colour-temperature overlay. */
 .svg-headlights.is-on,
 .headlight-img.is-on {
   display: block;
   mix-blend-mode: screen;
+  z-index: 2;
   /* opacity set dynamically by JS based on headlight fade */
 }
 
@@ -114,15 +173,20 @@ body {
   transform: translate(19.186%, 39.0625%) scale(0.49107);
 }
 
-/* Colour-temperature overlay — sits above scene layers, below HUD */
+/* Colour-temperature overlay — sits above scene layers, below HUD.
+   `soft-light` tints hue while leaving luminance detail intact; the previous
+   `multiply` darkened the night plates into 5-tone bands. The overlay's
+   opacity is fixed at 1 and the per-period colour carries its own low alpha,
+   so the tint can never compound into a crushed image. */
 .ct-overlay {
   position: absolute;
   inset: 0;
   pointer-events: none;
   z-index: 2;
-  /* background + opacity set dynamically by JS */
-  mix-blend-mode: multiply;
-  will-change: opacity, background;
+  /* background set dynamically by JS */
+  mix-blend-mode: soft-light;
+  opacity: 1;
+  will-change: background;
 }
 
 /* ── Cinematic CSS fallbacks (no photo) ── */
@@ -244,7 +308,7 @@ body {
   font-weight: 700;
   letter-spacing: 0.04em;
   color: #ffffff;
-  text-shadow: 0 0 40px rgba(180, 220, 255, 0.35), 0 2px 12px rgba(0, 0, 0, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 6px 24px rgba(0, 0, 0, 0.55);
   line-height: 1;
 }
 
@@ -263,9 +327,9 @@ body {
   gap: 8px;
   color: rgba(255, 255, 255, 0.95);
   background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.20);
   border-radius: 50px;
   padding: 7px 14px;
   box-shadow: 0 2px 10px rgba(0,0,0,0.15);
@@ -352,33 +416,26 @@ body {
   pointer-events: none;
   z-index: 3;
   opacity: 0;
-  transition: opacity 3s ease;
   mix-blend-mode: screen;
 }
 
-.particles-canvas.is-on {
-  opacity: 1;
-}
-
 /* ══════════════════════════════════════════════
-   SCANLINES (Realistic CRT overlay)
+   CINEMATIC FINISHING
+   A single, very soft vignette. No scanlines: the CRT line pattern sat on
+   top of every photograph at 60 % opacity and read as visible banding at
+   normal viewing distance, which is the opposite of photographic.
    ══════════════════════════════════════════════ */
-.scanlines {
-  position: fixed;
+.stage::after {
+  content: '';
+  position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
   pointer-events: none;
-  z-index: 40;
-  background: linear-gradient(
-    to bottom,
-    rgba(255, 255, 255, 0),
-    rgba(255, 255, 255, 0) 50%,
-    rgba(0, 0, 0, 0.04) 50%,
-    rgba(0, 0, 0, 0.04)
+  z-index: 4;
+  background: radial-gradient(
+    ellipse 78% 72% at 50% 46%,
+    rgba(0, 0, 0, 0) 55%,
+    rgba(0, 0, 0, 0.20) 100%
   );
-  background-size: 100% 4px;
-  opacity: 0.6;
 }
 
 /* ══════════════════════════════════════════════
@@ -502,9 +559,9 @@ body {
   max-height: 52px;
   /* Each button is its own frosted glass square */
   background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(16px) saturate(1.6);
-  -webkit-backdrop-filter: blur(16px) saturate(1.6);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(12px) saturate(1.05);
+  -webkit-backdrop-filter: blur(12px) saturate(1.05);
+  border: 1px solid rgba(255, 255, 255, 0.20);
   cursor: pointer;
   border-radius: 16px;
   transition: background 0.2s ease, transform 0.15s ease;
@@ -892,21 +949,15 @@ kbd {
 
 /* Ignition Headlight Flare */
 .headlight-flare {
-  animation: ignition-flare 0.4s cubic-bezier(0.25, 1, 0.5, 1) forwards !important;
+  animation: ignition-flare 1.2s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
+/* Warms the lamps up instead of flashing them: opacity stays owned by JS so
+   ending the animation never snaps the beams back to a different level. */
 @keyframes ignition-flare {
-  0% {
-    opacity: 0;
-  }
-  30% {
-    opacity: 1;
-    filter: brightness(1.8) drop-shadow(0 0 20px rgba(255, 255, 255, 0.8));
-  }
-  100% {
-    opacity: 0.72;
-    filter: brightness(1) drop-shadow(0 0 0 transparent);
-  }
+  0%   { filter: brightness(0.45); }
+  30%  { filter: brightness(1.22); }
+  100% { filter: brightness(1); }
 }
 
 /* Engine Vibration (Shake) */
@@ -922,15 +973,9 @@ kbd {
   45%, 85% { transform: translate(3px, -1px) rotate(-0.2deg); }
 }
 
-/* Engine Idle Rumble (Continuous) */
-.engine-idle {
-  animation: idle-rumble 0.08s infinite alternate ease-in-out;
-}
-
-@keyframes idle-rumble {
-  0% { transform: translateY(0); }
-  100% { transform: translateY(0.8px) translateX(0.3px); }
-}
+/* Engine idle rumble removed in the photorealism pass: a 80 ms infinite
+   translate kept the whole overlay permanently off the pixel grid, so every
+   beam edge stayed soft and the compositor re-rasterised forever. */
 
 /* UI Glitch Effect on Startup */
 .ui-glitch {
@@ -938,15 +983,10 @@ kbd {
 }
 
 @keyframes glitch {
-  0% { opacity: 0; transform: scale(1.05) skewX(20deg); filter: blur(4px) drop-shadow(5px 0 0 rgba(255,0,0,0.8)); }
-  10% { opacity: 1; transform: scale(1) skewX(0deg); filter: blur(0px); }
-  15% { transform: translate(-4px, 2px); filter: drop-shadow(-5px 0 0 rgba(0,255,255,0.8)); }
-  20% { transform: translate(4px, -2px); filter: drop-shadow(5px 0 0 rgba(255,0,255,0.8)); }
-  25% { transform: translate(0, 0); filter: drop-shadow(0 0 0 transparent); }
-  35% { opacity: 0.5; }
-  40% { opacity: 1; transform: skewX(-10deg); }
-  45% { transform: skewX(0); }
-  100% { opacity: 1; }
+  0%   { opacity: 0; transform: translateY(4px); filter: blur(3px); }
+  40%  { opacity: 0.65; filter: blur(1.2px); }
+  70%  { opacity: 0.92; filter: blur(0.3px); }
+  100% { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 /* ══════════════════════════════════════════════
@@ -1051,10 +1091,730 @@ html, body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
-  .particles-canvas, .scanlines { display: none; }
+  .particles-canvas { display: none; }
 }
 
 /* High-contrast / forced colors (Windows) */
 @media (forced-colors: active) {
   .conn-btn { border: 1px solid ButtonText; }
+}
+
+/* ════════════════════════════════════════════════════════════════════════════
+   PHASE 2 — DEPTH CLOCK, DRAWER, SETTINGS PANEL, ICON SYSTEM
+   ════════════════════════════════════════════════════════════════════════════
+   Layering, bottom to top:
+     0  .stage            scene plates + beams + custom wallpaper
+     5  #clock            the oversized time
+    10  #foreground       the same plate, clipped to below the measured skyline
+    15  #hud              date, weather, battery
+    60  #drawer, #panel, toast
+   The clock sits between 0 and 10, which is what produces the depth effect. */
+
+/* ── Clock ───────────────────────────────────────────────────────────────── */
+
+.clock {
+  position: fixed;
+  left: var(--clock-x, 35%);
+  top: var(--clock-y, 52%);
+  z-index: 5;
+  pointer-events: none;
+  /* -70 %: the text box's top is lifted by 70 % of its own height, leaving the
+     lower 30 % below the ridge line — that is the part the silhouette cuts. */
+  transform: translate(-50%, -70%) scale(var(--clock-scale, 1));
+  transform-origin: center center;
+  opacity: var(--clock-opacity, 0.85);
+  transition: opacity 0.6s ease, transform 0.6s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.clock.is-hidden { opacity: 0; }
+
+/* Replaces the old 88 px Orbitron headline. Thin, wide, translucent; the
+   shadow is what keeps white type legible on a white sky. */
+.hud-time {
+  font-family: 'Inter', 'Helvetica Neue', system-ui, sans-serif;
+  font-weight: 200;
+  font-size: clamp(76px, 13.5vw, 210px);
+  line-height: 0.86;
+  letter-spacing: -0.045em;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+  color: rgba(255, 255, 255, 0.94);
+  text-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.05),
+    0 2px 18px rgba(0, 0, 0, 0.28),
+    0 22px 60px rgba(0, 0, 0, 0.22);
+  white-space: nowrap;
+  user-select: none;
+  transition: font-size 0.4s ease;
+}
+
+/* On a bright plate (day, golden hour) the white type needs more help than on
+   a dark one. The engine adds this class per period. */
+.clock.is-bright .hud-time {
+  color: rgba(255, 255, 255, 0.97);
+  text-shadow:
+    0 2px 22px rgba(0, 0, 0, 0.42),
+    0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+/* ── Foreground occluder ─────────────────────────────────────────────────── */
+
+.foreground {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.fg-img {
+  position: absolute;
+  /* left/top/width/height are set in px by script.js to the exact rectangle the
+     plate occupies after object-fit: cover, so a percentage clip-path maps
+     straight onto image coordinates at any window size. */
+  display: none;
+  object-fit: fill;
+  transition: opacity 0.6s ease;
+  will-change: opacity;
+}
+
+.fg-img.is-active { display: block; }
+
+/* ── HUD (date, weather, battery) ────────────────────────────────────────── */
+
+.hud {
+  top: auto;
+  bottom: max(34px, calc(env(safe-area-inset-bottom) + 22px));
+  gap: 10px;
+  align-items: center;
+  opacity: 0.9;
+  z-index: 15;
+}
+
+.hud-date {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  color: rgba(255, 255, 255, 0.78);
+  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.55);
+}
+
+/* ── Custom wallpaper (Complete Image mode) ──────────────────────────────── */
+
+.custom-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: var(--bg-fit, cover);
+  object-position: var(--bg-position, 50% 50%);
+  transform: scale(var(--bg-scale, 1));
+  filter: brightness(var(--bg-brightness, 1));
+  z-index: 1;
+  display: none;
+}
+
+.stage.is-custom > .layer,
+.stage.is-custom > .ct-overlay { display: none; }
+.stage.is-custom > .custom-bg { display: block; }
+
+/* App-level dimming.
+   A tinted overlay would have to sit between the scene and the foreground
+   copy, which would leave the mountain bright while the plate behind it
+   dimmed. A filter on both keeps the two halves of the illusion identical,
+   and leaves the clock and HUD untouched — you dim the photograph, not the
+   interface. */
+.stage,
+.foreground {
+  filter: brightness(var(--stage-brightness, 1));
+}
+
+/* ── Drawer ──────────────────────────────────────────────────────────────── */
+
+.drawer-trigger {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  z-index: 60;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+/* A whisper of a hint that something lives at the edge. */
+.drawer-rail {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 76px;
+  transform: translateY(-50%);
+  border-radius: 0 3px 3px 0;
+  background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.28), transparent);
+  z-index: 59;
+  pointer-events: none;
+  opacity: 0.5;
+  transition: opacity 0.3s ease, width 0.3s ease;
+}
+
+body.drawer-enabled .drawer-rail { opacity: 0.55; }
+body:not(.drawer-enabled) .drawer-trigger,
+body:not(.drawer-enabled) .drawer-rail { display: none; }
+
+.drawer {
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 306px;
+  max-width: 86vw;
+  z-index: 61;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(-102%);
+  transition: transform 0.34s cubic-bezier(0.22, 0.61, 0.36, 1),
+              box-shadow 0.34s ease;
+  /* Frosted glass: a real backdrop blur plus a translucent fill, so the scene
+     reads through it instead of being covered by a slab. */
+  background: rgba(14, 16, 22, 0.52);
+  -webkit-backdrop-filter: blur(26px) saturate(1.35);
+  backdrop-filter: blur(26px) saturate(1.35);
+  border-right: 1px solid rgba(255, 255, 255, 0.09);
+  box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+.drawer.is-open {
+  transform: translateX(0);
+  box-shadow: 24px 0 60px -20px rgba(0, 0, 0, 0.65);
+}
+
+/* On a bright scene the glass needs more body or the text disappears. */
+body.scene-bright .drawer { background: rgba(12, 14, 19, 0.66); }
+body.scene-bright .panel { background: rgba(12, 14, 19, 0.72); }
+
+.drawer-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px 18px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.drawer-brand {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.26em;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.drawer-head-actions { display: flex; gap: 6px; }
+
+.drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 18px 18px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.drawer-section { padding: 16px 0 6px; }
+.drawer-section + .drawer-section { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+
+.drawer-title {
+  margin: 0 0 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.44);
+}
+
+.drawer-foot {
+  padding: 14px 18px 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  display: grid;
+  gap: 8px;
+}
+
+/* ── Icon system ─────────────────────────────────────────────────────────── */
+
+/* One grid, one stroke weight, one join style. Every icon in the drawer and
+   panel is a <use> of a symbol drawn on the same 24 px grid. */
+.ic {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  display: block;
+  color: currentColor;
+  stroke-width: 1.5;
+  pointer-events: none;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
+  transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease,
+              transform 0.16s ease;
+}
+
+.icon-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.icon-btn:active { transform: scale(0.94); }
+.icon-btn[aria-pressed='true'] {
+  background: rgba(140, 190, 255, 0.20);
+  border-color: rgba(160, 200, 255, 0.34);
+  color: #dbeaff;
+}
+.icon-btn:disabled,
+.icon-btn[aria-disabled='true'] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* Visible keyboard focus everywhere, drawn outside the control. */
+.icon-btn:focus-visible,
+.pill-btn:focus-visible,
+.toggle-btn:focus-visible,
+.status-chip:focus-visible,
+.switch:focus-visible,
+.seg:focus-visible,
+.wide-btn:focus-visible,
+.slider:focus-visible,
+.select:focus-visible,
+.drawer-trigger:focus-visible,
+summary:focus-visible {
+  outline: 2px solid rgba(150, 200, 255, 0.9);
+  outline-offset: 2px;
+}
+
+.control-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0;
+}
+.control-row.wrap { flex-wrap: wrap; }
+
+.pill-btn,
+.toggle-btn,
+.wide-btn,
+.status-chip,
+.seg {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 10px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease,
+              color 0.16s ease, transform 0.12s ease;
+}
+
+.pill-btn:hover,
+.toggle-btn:hover,
+.wide-btn:hover,
+.status-chip:hover,
+.seg:hover { background: rgba(255, 255, 255, 0.12); }
+.pill-btn:active,
+.toggle-btn:active,
+.wide-btn:active,
+.seg:active { transform: scale(0.98); }
+
+.pill-btn.grow { flex: 1; text-align: center; }
+.pill-btn.primary,
+.wide-btn.primary {
+  background: rgba(150, 196, 255, 0.20);
+  border-color: rgba(150, 196, 255, 0.32);
+  color: #e8f2ff;
+}
+.pill-btn.danger {
+  background: rgba(255, 120, 120, 0.14);
+  border-color: rgba(255, 130, 130, 0.28);
+  color: #ffd9d9;
+}
+
+.toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  justify-content: flex-start;
+}
+.toggle-btn[aria-pressed='true'] {
+  background: rgba(150, 196, 255, 0.18);
+  border-color: rgba(150, 196, 255, 0.30);
+  color: #e8f2ff;
+}
+
+.wide-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-start;
+  padding: 10px 12px;
+  width: 100%;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 10px;
+}
+.status-chip .chip-label {
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-chip .conn-status {
+  margin-left: auto;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+.status-chip.is-on .conn-status { color: rgba(120, 220, 170, 0.95); }
+.status-chip.is-off .conn-status { color: rgba(255, 255, 255, 0.35); }
+.status-chip.is-off .ic { color: rgba(255, 255, 255, 0.42); }
+.status-chip.is-unknown .conn-status { color: rgba(255, 200, 120, 0.9); }
+
+.status-row { display: flex; gap: 8px; }
+
+.value-label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255, 255, 255, 0.55);
+  min-width: 38px;
+  text-align: right;
+}
+
+.hint {
+  margin: 8px 0 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+kbd {
+  font: inherit;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* ── Sliders ─────────────────────────────────────────────────────────────── */
+
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: 1;
+  min-width: 60px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+  cursor: pointer;
+  margin: 0;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #eef4ff;
+  border: 0;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.slider::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border: 0;
+  border-radius: 50%;
+  background: #eef4ff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.5);
+}
+
+/* ── Switches ────────────────────────────────────────────────────────────── */
+
+.switch {
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.10);
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease;
+}
+.switch > span {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.85);
+  transition: transform 0.18s cubic-bezier(0.22, 0.61, 0.36, 1), background 0.18s ease;
+}
+.switch[aria-checked='true'] {
+  background: rgba(120, 180, 255, 0.55);
+  border-color: rgba(150, 200, 255, 0.5);
+}
+.switch[aria-checked='true'] > span {
+  transform: translateX(16px);
+  background: #fff;
+}
+
+/* ── Segmented control ───────────────────────────────────────────────────── */
+
+.segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.seg {
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 11.5px;
+}
+.seg[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.16);
+  color: #fff;
+}
+
+.select {
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 9px;
+  padding: 6px 8px;
+  max-width: 100%;
+}
+.select option { background: #14161c; color: #e8eefc; }
+
+/* ── Settings panel ──────────────────────────────────────────────────────── */
+
+.panel-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 69;
+  background: rgba(4, 6, 10, 0.42);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  opacity: 0;
+  transition: opacity 0.28s ease;
+}
+.panel-scrim.is-open { opacity: 1; }
+
+.panel {
+  position: fixed;
+  z-index: 70;
+  top: 50%;
+  right: 24px;
+  transform: translateY(-50%) translateX(12px) scale(0.985);
+  width: min(460px, calc(100vw - 40px));
+  max-height: min(78vh, 760px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(16, 18, 24, 0.62);
+  -webkit-backdrop-filter: blur(30px) saturate(1.4);
+  backdrop-filter: blur(30px) saturate(1.4);
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.85),
+              inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.9);
+  font-family: 'Inter', system-ui, sans-serif;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.26s ease, transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.panel.is-open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(-50%) translateX(0) scale(1);
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 18px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.07);
+}
+.panel-head h1 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.panel-body {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 18px 20px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+}
+
+.panel-group {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.panel-group > summary {
+  cursor: pointer;
+  padding: 13px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.82);
+  list-style: none;
+}
+.panel-group > summary::-webkit-details-marker { display: none; }
+.panel-group > summary::after {
+  content: '';
+  float: right;
+  width: 7px;
+  height: 7px;
+  margin-top: 4px;
+  border-right: 1.5px solid rgba(255, 255, 255, 0.45);
+  border-bottom: 1.5px solid rgba(255, 255, 255, 0.45);
+  transform: rotate(45deg);
+  transition: transform 0.2s ease;
+}
+.panel-group[open] > summary::after { transform: rotate(-135deg); }
+
+.group-body { padding: 2px 2px 14px; }
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 9px 0;
+}
+.field-label {
+  flex: 0 0 132px;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.62);
+}
+.field-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.field-control.row { flex-wrap: wrap; margin-left: 0; }
+.field > .slider { flex: 1; }
+
+.sub-controls {
+  margin: 4px 0 8px;
+  padding: 6px 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.design-preview-wrap {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+.design-preview {
+  width: 100%;
+  max-height: 160px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #0a0c10;
+}
+.design-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 11px;
+}
+
+/* ── Toast ───────────────────────────────────────────────────────────────── */
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translate(-50%, 8px);
+  z-index: 80;
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 10px 16px;
+  border-radius: 999px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.94);
+  background: rgba(18, 20, 26, 0.82);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(30px);
+  box-shadow: 0 12px 40px -12px rgba(0, 0, 0, 0.8);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.toast.is-visible { opacity: 1; transform: translate(-50%, 0); }
+.toast[data-tone='error'] { border-color: rgba(255, 130, 130, 0.35); }
+.toast[data-tone='ok'] { border-color: rgba(120, 220, 170, 0.30); }
+
+/* ── Responsive ──────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  .drawer { width: 100vw; max-width: 100vw; }
+  .panel { right: 0; width: 100vw; max-height: 92vh; border-radius: 16px 16px 0 0; top: auto; bottom: 0; transform: translateY(12px); }
+  .panel.is-open { transform: translateY(0); }
+  .field-label { flex-basis: 104px; }
+  .hud-time { font-size: clamp(58px, 20vw, 120px); }
+}
+
+/* ── Reduced motion ──────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .panel,
+  .panel-scrim,
+  .toast,
+  .clock,
+  .fg-img,
+  .icon-btn,
+  .pill-btn,
+  .toggle-btn,
+  .switch,
+  .seg { transition-duration: 0.001ms !important; }
 }

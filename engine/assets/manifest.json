@@ -1,8 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "NIGHTDRIVE asset manifest — documents required and present image files.",
-  "version": "2.1.0",
-  "targetDisplay": "1366x768",
+  "description": "NIGHTDRIVE asset manifest — documents the required image files, their resolution, how the engine composites them, and which slots a customisation phase can swap.",
+  "version": "2.3.0",
+  "targetDisplay": "1920x1080 (source plates are 1376x768 and are only ever downscaled from there)",
+  "encoding": {
+    "format": "JPEG, 4:4:4 chroma (no subsampling), progressive, quality 95",
+    "why": "4:2:0 chroma subsampling smeared the car's edges, and the old night plates were quantised to 0.59-0.82 bits/pixel, which is what produced the blocky night sky. scripts/validate.mjs fails the build if a plate drops below 1280x720, loses 4:4:4 chroma, or falls under 1.0 bits/pixel."
+  },
   "periods": [
     {
       "id": "morning",
@@ -14,7 +18,7 @@
           "required": true,
           "preferredPath": "assets/morning/scene.jpg",
           "fallbackPath": "assets/morning/scene.svg",
-          "recommendedDimensions": "1366x768",
+          "resolution": "1376x768",
           "description": "Cool blue-peach dawn light, mist in valley, pine trees, black Challenger, headlights OFF",
           "status": "present"
         }
@@ -30,7 +34,7 @@
           "required": true,
           "preferredPath": "assets/day/scene.jpg",
           "fallbackPath": "assets/day/scene.svg",
-          "recommendedDimensions": "1366x768",
+          "resolution": "1376x768",
           "description": "Full daylight, clear blue sky, mountain peaks, green valley, Challenger headlights OFF",
           "status": "present"
         }
@@ -46,7 +50,7 @@
           "required": true,
           "preferredPath": "assets/golden-hour/scene.jpg",
           "fallbackPath": "assets/golden-hour/scene.svg",
-          "recommendedDimensions": "1366x768",
+          "resolution": "1376x768",
           "description": "Warm amber/orange sun near horizon, dramatic shadows, rim-lit Challenger, headlights OFF",
           "status": "present"
         }
@@ -62,21 +66,19 @@
           "required": true,
           "preferredPath": "assets/dusk/scene.jpg",
           "fallbackPath": "assets/dusk/scene.svg",
-          "recommendedDimensions": "1366x768",
-          "description": "Deep blue/purple twilight, last glow on mountain peaks, Challenger body headlights OFF in base image",
+          "resolution": "1376x768",
+          "description": "Deep blue/purple twilight, last glow on mountain peaks, Challenger with lamps lit in the plate",
           "status": "present"
         },
         "headlights": {
           "required": true,
-          "preferredPath": "assets/dusk/headlights.svg",
-          "alternativePaths": [
-            "assets/dusk/headlights.jpg"
-          ],
-          "recommendedDimensions": "1366x768",
+          "preferredPath": "assets/dusk/headlights.jpg",
+          "fallbackPath": "assets/dusk/headlights.svg",
+          "resolution": "1376x768",
           "blendMode": "screen",
-          "description": "Headlight beams overlay — applied on top of scene with screen blend mode. Background should be near-black.",
-          "note": "Currently uses a generic headlight beam image. Ideal: beams composited at the correct car position in the dusk scene.",
-          "status": "present (generic beam image — not position-matched)"
+          "opacity": 0.55,
+          "description": "Volumetric beam cone and wet-road spill. Emitter rings dissolved so the overlay adds glow instead of a second set of lamps.",
+          "status": "present"
         }
       }
     },
@@ -90,21 +92,20 @@
           "required": true,
           "preferredPath": "assets/night/scene.jpg",
           "fallbackPath": "assets/night/scene.svg",
-          "recommendedDimensions": "1366x768",
-          "description": "Dark mountain road, starry sky / Milky Way, Challenger barely visible, headlights OFF in base image",
-          "status": "present"
+          "resolution": "1376x768",
+          "description": "Dark mountain road, single moon, Challenger with lamps lit in the plate",
+          "status": "present",
+          "derivedFrom": "assets/dusk/scene.jpg",
+          "derivation": "Per-channel colour grade fitted to the original night plate (~1 luminance level residual), so the shared camera pose is carried over and the crossfade does not jump. The photographic moon from assets/moon.jpg is composited in place of the original 40px moon."
         },
         "headlights": {
           "required": true,
-          "preferredPath": "assets/night/headlights.svg",
-          "alternativePaths": [
-            "assets/night/headlights.jpg"
-          ],
-          "recommendedDimensions": "1366x768",
+          "preferredPath": "assets/night/headlights.jpg",
+          "fallbackPath": "assets/night/headlights.svg",
+          "resolution": "1376x768",
           "blendMode": "screen",
-          "description": "Stronger headlight beam overlay for night — wider cone, brighter glow",
-          "note": "Currently uses a generic headlight beam image. Ideal: beams composited at the correct car position in the night scene.",
-          "status": "present (generic beam image — not position-matched)"
+          "opacity": 0.55,
+          "status": "present"
         }
       }
     },
@@ -117,26 +118,81 @@
         "scene": {
           "required": true,
           "preferredPath": "assets/midnight/scene.jpg",
-          "recommendedDimensions": "1366x768",
-          "description": "Deepest night, cold blue/black tones, headlights ON",
-          "status": "present"
+          "resolution": "1376x768",
+          "description": "Deepest night, cold blue tones, paler moon, lamps lit in the plate",
+          "status": "present",
+          "derivedFrom": "assets/dusk/scene.jpg",
+          "derivation": "Same fitted grade as night, with a cooler/dimmer moon to match the deeper sky.",
+          "fallback": "CSS gradient (no midnight/scene.svg is shipped)"
         },
         "headlights": {
           "required": true,
-          "preferredPath": "assets/midnight/headlights.svg",
-          "alternativePaths": [
-            "assets/midnight/headlights.jpg"
-          ],
-          "recommendedDimensions": "1366x768",
+          "preferredPath": "assets/midnight/headlights.jpg",
+          "fallbackPath": "assets/midnight/headlights.svg",
+          "resolution": "1376x768",
           "blendMode": "screen",
+          "opacity": 0.55,
           "status": "present"
         }
       }
     }
   ],
+  "sourceAssets": {
+    "assets/moon.jpg": "2580x2452 lunar plate, used to build the moon composited into night and midnight."
+  },
+  "regeneration": {
+    "scripts/rebuild-assets.py": "Rebuilds night and midnight from the dusk master and re-encodes every plate at 4:4:4 / q95.",
+    "scripts/build-headlights.py": "Rebuilds the beam overlay for dusk, night and midnight from the original beam plate.",
+    "scripts/rebuild-assets.py --derived-only": "Rewrites only night and midnight from the shipped dusk master, for changes to the moon composite. Skips the badge retouch (the dusk master already has it) and leaves the other four plates byte-identical, so they do not gain a JPEG generation."
+  },
   "knownLimitations": [
-    "Headlight overlays are generic beam images, not composited to match the specific car position in each scene. Ideal replacement: Photoshop/GIMP composites using the actual scene as background.",
-    "Scene camera angles differ slightly between morning/day/goldenHour (front-facing car) and dusk/night (rear-facing car). A matched set would improve crossfade continuity.",
-    "Day scene contains a visible license plate area with text artifact from the AI generator — consider replacing with a clean crop."
-  ]
+    "All six plates are 1376x768 and landscape-only. That is a true 1:1 match at 1366x768 and a slight downscale at 1080p, but 1440p and 4K displays still upscale. The precise fix is six identically composed 2560x1440 masters; no external paths are referenced because those files do not exist yet.",
+    "No portrait plates ship. The engine handles their absence correctly (contained over a blurred backdrop) but a native portrait render would look better.",
+    "No independent car layer ships, so the car cannot be swapped without re-rendering the plate.",
+    "morning/day/goldenHour use a closer, front-on camera than dusk/night/midnight. Composition is consistent within each group but the car's scale shifts across the midday-to-dusk boundary.",
+    "The plates show a muscle car, not the EV/sports-car direction named in the brief. That needs new plates rather than retouching.",
+    "The beam overlay is a generic headlight render positioned by a single CSS transform. It aligns well at the shipped 16:9 plates but was not authored against the car's exact lamp coordinates.",
+    "A ~2 px fender emblem is faintly present on the front three-quarter plates. It is not legible at any supported display size and was left alone rather than risk an inpaint artifact on the dark paint.",
+    "Weather changes the sky not at all: the plates are fixed and the Open-Meteo data only drives the temperature/icon widget."
+  ],
+  "retouch": {
+    "modelBadge": {
+      "applied": true,
+      "box": [
+        794,
+        600,
+        828,
+        614
+      ],
+      "method": "mask-based inpaint, feathered into the grille, core pulled to a local blur",
+      "meanChangePerPlate": {
+        "morning": 9.62,
+        "day": 9.07,
+        "golden-hour": 7.5,
+        "dusk": 8.81,
+        "night": 5.63,
+        "midnight": 3.7
+      },
+      "note": "The plates carried a small '392' model badge on the grille. The brief forbids baked-in model names and logos, so it was retouched out of all six."
+    },
+    "moonComposite": {
+      "applied": true,
+      "periods": [
+        "night",
+        "midnight"
+      ],
+      "source": "assets/moon.jpg",
+      "note": "The lunar disc is composited from a photographic plate, replacing the ~40 px moon in the original renders. The glow around it is written into a square patch, and that patch's own edges are now faded to exactly zero: without the window the patch boundary was a ~2.5-level step across the sky gradient, visible as a faint box at 1:1. scripts/rebuild-assets.py measures the remaining seam and refuses to write a plate above 1.0 level.",
+      "measuredSeamLevels": {
+        "night": 0.41,
+        "midnight": 0.31
+      }
+    }
+  },
+  "slots": {
+    "landscape": "Wide plate per period (ships today).",
+    "portrait": "Optional tall plate per period, preferred on a tall viewport. Absent: the landscape plate is shown contained over a blurred copy of itself.",
+    "cursor": "Optional transparent car layer drawn over the plate (empty today — the car is part of the photograph).",
+    "focus": "Car position as x% y%, used as object-position so narrow/portrait viewports crop toward the car."
+  }
 }

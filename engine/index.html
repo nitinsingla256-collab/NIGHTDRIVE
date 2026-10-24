@@ -8,12 +8,13 @@
   <meta name="description" content="NIGHTDRIVE — cinematic time-aware automotive wallpaper featuring a black Dodge Challenger on a winding mountain road." />
   <title>NIGHTDRIVE</title>
 
-  <!-- Google Fonts: Orbitron for the clock, Rajdhani for brand/labels, Inter for UI -->
+  <!-- Google Fonts: Inter for the clock and UI. Loaded with display=swap so a
+       slow or offline font never blocks the wallpaper from painting. -->
   <link rel="preconnect" href="https://fonts.googleapis.com" crossorigin />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@400;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@200;300;400;500;600&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?v=6" />
+  <link rel="stylesheet" href="styles.css?v=9" />
 </head>
 <body>
 
@@ -24,27 +25,34 @@
     <div class="layer is-visible" data-layer="a">
       <div class="scene-fallback" data-period="night"></div>
       <div class="svg-scene"></div>
-      <img class="scene-img" alt="" loading="eager" />
+      <!-- Background plate. `sizes`/`media` let a future portrait asset be
+           picked instead of a landscape one, so nothing is ever stretched or
+           blindly cropped. script.js fills these in per period. -->
+      <img class="scene-img" alt="" loading="eager" decoding="async" />
       <div class="svg-headlights"></div>
       <img class="headlight-img" alt="" />
+      <!-- Optional transparent car layer, drawn over the plate so the car and
+           the landscape can be swapped independently. Hidden unless a period
+           actually supplies one (see SCENE_ASSETS.cursor). -->
+      <img class="car-img" alt="" aria-hidden="true" />
     </div>
 
     <!-- Layer B — the other crossfade layer -->
     <div class="layer" data-layer="b">
       <div class="scene-fallback" data-period="night"></div>
       <div class="svg-scene"></div>
-      <img class="scene-img" alt="" loading="eager" />
+      <img class="scene-img" alt="" loading="eager" decoding="async" />
       <div class="svg-headlights"></div>
       <img class="headlight-img" alt="" />
+      <img class="car-img" alt="" aria-hidden="true" />
     </div>
 
-    <!-- Volumetric Headlight Beams (SVG handles this responsively) -->
+    <!-- User-supplied complete wallpaper (Complete Image mode). Sits on top of
+         the scene layers, which are hidden while it is active. -->
+    <img id="custom-bg" class="custom-bg" alt="" aria-hidden="true" />
 
-    <!-- Cinematic Dust Particles -->
+    <!-- Dust motes in the headlight cones (disabled under reduced motion) -->
     <canvas id="particles-canvas" class="particles-canvas" aria-hidden="true"></canvas>
-
-    <!-- CRT Scanlines / Realistic display overlay -->
-    <div class="scanlines" aria-hidden="true"></div>
 
     <!-- Colour-temperature overlay — warms/cools the scene over time -->
     <div id="ct-overlay" class="ct-overlay" aria-hidden="true"></div>
@@ -53,24 +61,34 @@
     <div id="scene-label" class="scene-label" aria-hidden="true">
       <span id="scene-label-text"></span>
     </div>
-
-    <!-- Cinematic Night Moon (Removed) -->
-
   </div><!-- /stage -->
 
-  <!-- ══ HUD: CLOCK & DATE ══ -->
-  <div id="hud" class="hud" aria-label="Clock and date">
-    <!-- Date line -->
+  <!-- ══ FOREGROUND OCCLUDER ══
+       A copy of the active plate clipped to everything below the measured
+       skyline. It sits above the clock and below the HUD text, so the mountain
+       cuts across the clock exactly where the photograph's horizon is. Two
+       copies mirror the two crossfade layers; with no ridge data both stay
+       hidden and the clock simply sits in front of the scene. -->
+  <div id="foreground" class="foreground" aria-hidden="true">
+    <img class="fg-img" data-fg="a" alt="" />
+    <img class="fg-img" data-fg="b" alt="" />
+  </div>
+
+  <!-- ══ CLOCK ══ Partially behind the silhouette. Position, scale and
+       opacity are set per scene from the measured ridge, so the same markup
+       works for every plate and every window size. -->
+  <div id="clock" class="clock" role="timer" aria-live="off" aria-label="Current time">
+    <div id="hud-time" class="hud-time">--:--</div>
+  </div>
+
+  <!-- ══ HUD: DATE & WIDGETS ══ -->
+  <div id="hud" class="hud" aria-label="Date, weather and battery">
     <div id="hud-date" class="hud-date"></div>
 
-    <!-- Time line -->
-    <div id="hud-time" class="hud-time"></div>
-
-    <!-- Weather & Battery -->
     <div class="hud-widgets">
       <div id="weather-widget" class="weather-widget" title="Weather">
         <div id="weather-icon" class="weather-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg>
         </div>
         <div class="weather-temp-container">
           <span id="weather-temp" class="weather-temp">--°C</span>
@@ -91,60 +109,408 @@
     </div>
   </div>
 
-  <!-- ══ CONTROLS LEFT ══ -->
-  <div id="controls-left" class="controls-left" aria-label="Network controls">
-    <!-- Wi-Fi -->
-    <button type="button" id="wifi-btn" class="conn-btn" title="Wi-Fi" aria-label="Wi-Fi status">
-      <svg class="conn-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M5 12.55a11 11 0 0 1 14.08 0"/>
-        <path d="M1.42 9a16 16 0 0 1 21.16 0"/>
-        <path d="M8.53 16.11a6 6 0 0 1 6.95 0"/>
-        <circle cx="12" cy="20" r="1" fill="currentColor"/>
-      </svg>
-      <span id="wifi-label" class="conn-label">Wi-Fi</span>
-      <span id="wifi-status" class="conn-status">--</span>
-    </button>
+  <!-- ══ DRAWER ══
+       A 14 px edge strip on the left. Hovering or focusing it slides the
+       panel out; leaving closes it again after a short grace period so it
+       cannot flicker. Pin keeps it open. -->
+  <button type="button" id="drawer-trigger" class="drawer-trigger" aria-label="Open controls" aria-expanded="false" aria-controls="drawer"></button>
+  <div id="drawer-rail" class="drawer-rail" aria-hidden="true"></div>
 
-    <!-- Bluetooth -->
-    <button type="button" id="bt-btn" class="conn-btn" title="Bluetooth" aria-label="Bluetooth status">
-      <svg class="conn-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polyline points="6.5 6.5 17.5 17.5 12 23 12 1 17.5 6.5 6.5 17.5"/>
-      </svg>
-      <span id="bt-label" class="conn-label">Bluetooth</span>
-      <span id="bt-status" class="conn-status">--</span>
-    </button>
-  </div>
+  <aside id="drawer" class="drawer" aria-label="Quick controls" aria-hidden="true">
+    <header class="drawer-head">
+      <span class="drawer-brand">NIGHTDRIVE</span>
+      <div class="drawer-head-actions">
+        <button type="button" class="icon-btn" id="drawer-pin" data-action="drawer.pin" aria-pressed="false" title="Keep drawer open" aria-label="Keep drawer open">
+          <svg class="ic" aria-hidden="true"><use href="#i-pin"/></svg>
+        </button>
+        <button type="button" class="icon-btn" id="drawer-close" data-action="drawer.close" title="Close" aria-label="Close drawer">
+          <svg class="ic" aria-hidden="true"><use href="#i-close"/></svg>
+        </button>
+      </div>
+    </header>
 
-  <!-- ══ CONTROLS RIGHT ══ -->
-  <div id="controls-right" class="controls-right" aria-label="System controls">
-    <!-- Volume -->
-    <button type="button" id="conn-audio" class="conn-btn" title="Volume" aria-label="Volume">
-      <svg class="conn-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
-        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
-      </svg>
-      <span class="conn-label">Volume</span>
-      <span id="audio-pct" class="conn-status">—</span>
-    </button>
+    <div class="drawer-body">
+      <!-- Status row -->
+      <section class="drawer-section">
+        <h2 class="drawer-title">System</h2>
+        <div class="status-row">
+          <button type="button" id="wifi-btn" class="status-chip" data-action="system.wifi" title="Network reachability — not the Wi-Fi radio; opens system network settings" aria-label="Network status and settings">
+            <svg class="ic" aria-hidden="true"><use href="#i-wifi"/></svg>
+            <span class="chip-label">Network</span>
+            <span id="wifi-status" class="conn-status">--</span>
+          </button>
+          <button type="button" id="bt-btn" class="status-chip" data-action="system.bt" title="Bluetooth state cannot be read from a web view — opens system settings" aria-label="Bluetooth: state unavailable; opens system settings">
+            <svg class="ic" aria-hidden="true"><use href="#i-bt"/></svg>
+            <span class="chip-label">Bluetooth</span>
+            <span id="bt-status" class="conn-status">--</span>
+          </button>
+        </div>
+      </section>
 
-    <!-- Focus Assist (Do Not Disturb) -->
-    <button type="button" id="focus-btn" class="conn-btn" title="Focus / Do Not Disturb" aria-label="Focus / Do Not Disturb">
-      <svg class="conn-icon" aria-hidden="true" focusable="false" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-        <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-      </svg>
-      <span class="conn-label">Focus</span>
-      <span class="conn-status">Set</span>
-    </button>
-  </div>
+      <!-- Audio -->
+      <section class="drawer-section">
+        <h2 class="drawer-title">Audio</h2>
+        <div class="control-row">
+          <button type="button" id="conn-audio" class="icon-btn" data-action="system.volumeSettings" title="System volume panel" aria-label="Open system volume">
+            <svg class="ic" aria-hidden="true"><use href="#i-volume"/></svg>
+          </button>
+          <input type="range" id="volume-range" class="slider" min="0" max="100" step="1" value="70" aria-label="NIGHTDRIVE audio volume" />
+          <span id="audio-pct" class="value-label">—</span>
+          <button type="button" id="mute-btn" class="icon-btn" data-action="audio.mute" aria-pressed="false" title="Mute NIGHTDRIVE audio" aria-label="Mute">
+            <svg class="ic" aria-hidden="true"><use href="#i-mute"/></svg>
+          </button>
+        </div>
+        <p class="hint" id="volume-hint">Controls NIGHTDRIVE's own sound. System volume is the OS mixer.</p>
+      </section>
 
+      <!-- Scene -->
+      <section class="drawer-section">
+        <h2 class="drawer-title">Scene</h2>
+        <div class="control-row wrap">
+          <button type="button" class="pill-btn" data-action="scene.prev" title="Previous scene" aria-label="Previous scene">‹</button>
+          <button type="button" class="pill-btn grow" id="scene-name" data-action="scene.cycle" aria-label="Next scene">—</button>
+          <button type="button" class="pill-btn" data-action="scene.next" title="Next scene" aria-label="Next scene">›</button>
+        </div>
+        <div class="control-row">
+          <button type="button" class="toggle-btn" id="auto-scene" data-action="scene.auto" aria-pressed="true">
+            <svg class="ic" aria-hidden="true"><use href="#i-clock"/></svg>
+            <span>Follow the clock</span>
+          </button>
+        </div>
+        <div class="control-row">
+          <button type="button" class="toggle-btn" id="headlights-btn" data-action="scene.headlights" aria-pressed="false">
+            <svg class="ic" aria-hidden="true"><use href="#i-beam"/></svg>
+            <span>Headlights</span>
+          </button>
+          <button type="button" class="toggle-btn" id="playback-btn" data-action="scene.playback" aria-pressed="true">
+            <svg class="ic" aria-hidden="true"><use href="#i-play"/></svg>
+            <span>Playback</span>
+          </button>
+        </div>
+      </section>
 
-  <!-- ══ AUDIO & STARTUP ══ -->
-  <!-- Ignition sound. Plays with the cinematic startup; browsers that block autoplay defer it to the first click. -->
+      <!-- Engine -->
+      <section class="drawer-section">
+        <h2 class="drawer-title">Engine</h2>
+        <div class="control-row">
+          <button type="button" id="start-engine" class="toggle-btn" data-action="engine.start">
+            <svg class="ic" aria-hidden="true"><use href="#i-power"/></svg>
+            <span>Start engine</span>
+          </button>
+        </div>
+        <p class="hint" id="startup-hint">Startup sound and vibration play only when you ask for them.</p>
+      </section>
+
+      <!-- Display -->
+      <section class="drawer-section">
+        <h2 class="drawer-title">Display</h2>
+        <label class="control-row" for="brightness-range">
+          <svg class="ic" aria-hidden="true"><use href="#i-sun"/></svg>
+          <input type="range" id="brightness-range" class="slider" min="40" max="110" step="1" value="100" aria-label="Scene brightness" />
+          <span id="brightness-value" class="value-label">100%</span>
+        </label>
+        <p class="hint">Dims the wallpaper itself. System brightness needs a native host.</p>
+      </section>
+    </div>
+
+    <footer class="drawer-foot">
+      <button type="button" class="wide-btn primary" id="open-settings" data-action="panel.open">
+        <svg class="ic" aria-hidden="true"><use href="#i-settings"/></svg>
+        <span>Wallpaper Settings</span>
+      </button>
+      <button type="button" class="wide-btn" data-action="app.exit">
+        <svg class="ic" aria-hidden="true"><use href="#i-exit"/></svg>
+        <span>Exit</span>
+      </button>
+    </footer>
+  </aside>
+
+  <!-- ══ SETTINGS PANEL ══ -->
+  <div id="panel-scrim" class="panel-scrim" hidden></div>
+  <section id="panel" class="panel" role="dialog" aria-modal="false" aria-labelledby="panel-title" aria-hidden="true" hidden>
+    <header class="panel-head">
+      <h1 id="panel-title">Wallpaper Settings</h1>
+      <button type="button" class="icon-btn" data-action="panel.close" title="Close settings" aria-label="Close settings">
+        <svg class="ic" aria-hidden="true"><use href="#i-close"/></svg>
+      </button>
+    </header>
+
+    <div class="panel-body">
+      <!-- Appearance & clock -->
+      <details class="panel-group" open>
+        <summary>Appearance &amp; clock</summary>
+        <div class="group-body">
+          <div class="field">
+            <label class="field-label" for="clock-visible">Clock</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="clock-visible" data-action="clock.visible" role="switch" aria-checked="true"><span></span></button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="clock-24h">24-hour clock</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="clock-24h" data-action="clock.format" role="switch" aria-checked="true"><span></span></button>
+            </div>
+          </div>
+          <label class="field" for="clock-scale">
+            <span class="field-label">Clock size</span>
+            <input type="range" id="clock-scale" class="slider" min="60" max="140" step="1" value="100" />
+            <output id="clock-scale-out" class="value-label">100%</output>
+          </label>
+          <label class="field" for="clock-opacity">
+            <span class="field-label">Clock opacity</span>
+            <input type="range" id="clock-opacity" class="slider" min="30" max="100" step="1" value="85" />
+            <output id="clock-opacity-out" class="value-label">85%</output>
+          </label>
+          <label class="field" for="clock-offset">
+            <span class="field-label">Clock position</span>
+            <input type="range" id="clock-offset" class="slider" min="-20" max="20" step="1" value="0" />
+            <output id="clock-offset-out" class="value-label">0</output>
+          </label>
+          <p class="hint">The clock sits behind the mountain silhouette. Its height is measured from the active scene; the offset nudges it.</p>
+        </div>
+      </details>
+
+      <!-- Cars & backgrounds -->
+      <details class="panel-group">
+        <summary>Cars &amp; backgrounds</summary>
+        <div class="group-body">
+          <div class="field">
+            <span class="field-label">Scene mode</span>
+            <div class="segmented" role="radiogroup" aria-label="Scene mode">
+              <button type="button" class="seg" data-action="mode.scene" aria-pressed="true">Built-in scenes</button>
+              <button type="button" class="seg" data-action="mode.custom" aria-pressed="false">Custom scene</button>
+            </div>
+          </div>
+          <div class="field">
+            <span class="field-label">Car layer</span>
+            <div class="field-control row">
+              <button type="button" class="pill-btn" data-action="car.import">Import car image…</button>
+              <button type="button" class="pill-btn" data-action="car.clear">Use photographed car</button>
+            </div>
+          </div>
+          <p class="hint" id="car-hint">A transparent PNG or WebP keeps its own background out of the scene. The built-in plates already contain a photographed car, so a new one is drawn on top of it — import a background too for a clean result. A cut-out is not attempted: an ordinary photo shows its full frame.</p>
+
+          <div id="car-controls" class="sub-controls" hidden>
+            <label class="field" for="car-scale">
+              <span class="field-label">Car scale</span>
+              <input type="range" id="car-scale" class="slider" min="20" max="180" step="1" value="100" />
+              <output id="car-scale-out" class="value-label">100%</output>
+            </label>
+            <label class="field" for="car-x">
+              <span class="field-label">Car horizontal</span>
+              <input type="range" id="car-x" class="slider" min="0" max="100" step="1" value="50" />
+              <output id="car-x-out" class="value-label">50%</output>
+            </label>
+            <label class="field" for="car-y">
+              <span class="field-label">Car vertical</span>
+              <input type="range" id="car-y" class="slider" min="0" max="100" step="1" value="74" />
+              <output id="car-y-out" class="value-label">74%</output>
+            </label>
+            <div class="field">
+              <span class="field-label">Car fit</span>
+              <div class="segmented" role="radiogroup" aria-label="Car fit">
+                <button type="button" class="seg" data-action="car.fit.contain" aria-pressed="true">Contain</button>
+                <button type="button" class="seg" data-action="car.fit.cover" aria-pressed="false">Fill frame</button>
+              </div>
+            </div>
+            <p class="hint">A transparent PNG or WebP keeps its own background out of the scene. A normal photograph is placed as-is — it cannot be cut out automatically.</p>
+          </div>
+          <div class="field">
+            <span class="field-label">Background</span>
+            <div class="field-control row">
+              <button type="button" class="pill-btn" data-action="bg.import">Import background…</button>
+              <button type="button" class="pill-btn" data-action="bg.clear">Use built-in scenes</button>
+            </div>
+          </div>
+          <div id="bg-controls" class="sub-controls" hidden>
+            <div class="field">
+              <span class="field-label">Fit</span>
+              <div class="segmented" role="radiogroup" aria-label="Background fit">
+                <button type="button" class="seg" data-action="bg.fit.cover" aria-pressed="true">Fill</button>
+                <button type="button" class="seg" data-action="bg.fit.contain" aria-pressed="false">Fit</button>
+              </div>
+            </div>
+            <label class="field" for="bg-scale">
+              <span class="field-label">Scale</span>
+              <input type="range" id="bg-scale" class="slider" min="100" max="200" step="1" value="100" />
+              <output id="bg-scale-out" class="value-label">100%</output>
+            </label>
+            <label class="field" for="bg-x">
+              <span class="field-label">Horizontal</span>
+              <input type="range" id="bg-x" class="slider" min="0" max="100" step="1" value="50" />
+              <output id="bg-x-out" class="value-label">50%</output>
+            </label>
+            <label class="field" for="bg-y">
+              <span class="field-label">Vertical</span>
+              <input type="range" id="bg-y" class="slider" min="0" max="100" step="1" value="50" />
+              <output id="bg-y-out" class="value-label">50%</output>
+            </label>
+            <label class="field" for="bg-brightness">
+              <span class="field-label">Brightness</span>
+              <input type="range" id="bg-brightness" class="slider" min="30" max="130" step="1" value="100" />
+              <output id="bg-brightness-out" class="value-label">100%</output>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <!-- Custom wallpaper -->
+      <details class="panel-group">
+        <summary>Custom wallpaper</summary>
+        <div class="group-body">
+          <p class="hint">Import a finished wallpaper — a photograph, a render, any composition. It is used whole: no second car, no duplicated clock, no forced splitting.</p>
+          <div class="field">
+            <div class="field-control row">
+              <button type="button" class="pill-btn primary" data-action="design.import">Import design…</button>
+              <button type="button" class="pill-btn" data-action="design.clear">Back to NIGHTDRIVE</button>
+            </div>
+          </div>
+          <div id="design-preview-wrap" class="design-preview-wrap" hidden>
+            <img id="design-preview" class="design-preview" alt="Preview of the imported wallpaper" />
+            <div class="design-meta">
+              <span id="design-name" class="value-label">—</span>
+              <span id="design-size" class="value-label"></span>
+            </div>
+            <div class="field-control row">
+              <button type="button" class="pill-btn primary" data-action="design.apply">Apply this design</button>
+              <button type="button" class="pill-btn" data-action="design.discard">Discard</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <!-- Drawer & icons -->
+      <details class="panel-group">
+        <summary>Drawer &amp; icons</summary>
+        <div class="group-body">
+          <div class="field">
+            <label class="field-label" for="drawer-enabled">Edge trigger</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="drawer-enabled" data-action="drawer.enabled" role="switch" aria-checked="true"><span></span></button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="drawer-pinned-setting">Keep drawer open</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="drawer-pinned-setting" data-action="drawer.pin" role="switch" aria-checked="false"><span></span></button>
+            </div>
+          </div>
+          <p class="hint">Keyboard: press <kbd>Tab</kbd> to reach the edge trigger, <kbd>Enter</kbd> to open, <kbd>Esc</kbd> to close.</p>
+        </div>
+      </details>
+
+      <!-- Sound & startup -->
+      <details class="panel-group">
+        <summary>Sound &amp; startup</summary>
+        <div class="group-body">
+          <label class="field" for="volume-range-2">
+            <span class="field-label">Engine sound volume</span>
+            <input type="range" id="volume-range-2" class="slider" min="0" max="100" step="1" value="70" />
+            <output id="volume-range-2-out" class="value-label">70%</output>
+          </label>
+          <div class="field">
+            <label class="field-label" for="startup-effect">Startup effect</label>
+            <div class="field-control">
+              <select id="startup-effect" class="select">
+                <option value="manual">Only when I start the engine</option>
+                <option value="once">Once per app launch</option>
+                <option value="always">Every wallpaper load</option>
+              </select>
+            </div>
+          </div>
+          <p class="hint">A wallpaper refresh is not an engine start. The default never replays the ignition on reload.</p>
+        </div>
+      </details>
+
+      <!-- Lighting -->
+      <details class="panel-group">
+        <summary>Lighting &amp; transitions</summary>
+        <div class="group-body">
+          <div class="field">
+            <label class="field-label" for="auto-scene-setting">Follow the clock</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="auto-scene-setting" data-action="scene.auto" role="switch" aria-checked="true"><span></span></button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="headlights-setting">Headlights</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="headlights-setting" data-action="scene.headlights" role="switch" aria-checked="false"><span></span></button>
+            </div>
+          </div>
+          <label class="field" for="transition-speed">
+            <span class="field-label">Crossfade speed</span>
+            <input type="range" id="transition-speed" class="slider" min="300" max="4000" step="100" value="1600" />
+            <output id="transition-speed-out" class="value-label">1.6 s</output>
+          </label>
+        </div>
+      </details>
+
+      <!-- Performance -->
+      <details class="panel-group">
+        <summary>Performance &amp; motion</summary>
+        <div class="group-body">
+          <div class="field">
+            <label class="field-label" for="motion-toggle">Scene motion</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="motion-toggle" data-action="perf.motion" role="switch" aria-checked="true"><span></span></button>
+            </div>
+          </div>
+          <div class="field">
+            <label class="field-label" for="particles-toggle">Dust motes</label>
+            <div class="field-control">
+              <button type="button" class="switch" id="particles-toggle" data-action="perf.particles" role="switch" aria-checked="true"><span></span></button>
+            </div>
+          </div>
+          <p class="hint" id="motion-hint">Respects your system's reduced-motion setting.</p>
+        </div>
+      </details>
+
+      <!-- Reset -->
+      <details class="panel-group">
+        <summary>Reset</summary>
+        <div class="group-body">
+          <p class="hint">Restores every setting and removes imported images from this device.</p>
+          <div class="field-control row">
+            <button type="button" class="pill-btn danger" data-action="app.reset">Restore defaults</button>
+          </div>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ══ TRANSIENT STATUS ══ -->
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <!-- ══ ICON SPRITE ══
+       A single set, 24 px grid, 1.5 px stroke, round caps/joins, drawn with
+       currentColor so one rule themes them all. Replacements cost one path. -->
+  <svg class="sprite" aria-hidden="true" focusable="false" width="0" height="0">
+    <defs>
+      <g id="ic-base" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"></g>
+    </defs>
+    <symbol id="i-wifi" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 8.5a15 15 0 0 1 19 0"/><path d="M5.5 12a10.5 10.5 0 0 1 13 0"/><path d="M8.5 15.5a6 6 0 0 1 7 0"/><circle cx="12" cy="19" r="1.1" fill="currentColor" stroke="none"/></g></symbol>
+    <symbol id="i-bt" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7.5 17 16.5 12 21V3l5 4.5-10 9"/></g></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18 6.5a7.5 7.5 0 0 1 0 11"/></g></symbol>
+    <symbol id="i-mute" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="m16 9.5 5 5"/><path d="m21 9.5-5 5"/></g></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></g></symbol>
+    <symbol id="i-beam" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16.5h5"/><path d="M8 16.5 20 9"/><path d="M8 16.5 20 14.5"/><path d="M8 16.5 20 19.5"/></g></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6.5v11l9-5.5z"/></g></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 6.5v11"/><path d="M14.5 6.5v11"/></g></symbol>
+    <symbol id="i-power" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v8"/><path d="M6.5 7a8 8 0 1 0 11 0"/></g></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3.6"/><path d="M12 3v1.8M12 19.2V21M3 12h1.8M19.2 12H21M5.6 5.6l1.3 1.3M17.1 17.1l1.3 1.3M18.4 5.6l-1.3 1.3M6.9 17.1l-1.3 1.3"/></g></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3.5h6l-1 5 3 3v1.5H7V11.5l3-3z"/><path d="M12 13v7.5"/></g></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m6.5 6.5 11 11M17.5 6.5l-11 11"/></g></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2.8"/><path d="M12 3.5v2M12 18.5v2M3.5 12h2M18.5 12h2M6 6l1.4 1.4M16.6 16.6 18 18M18 6l-1.4 1.4M7.4 16.6 6 18"/></g></symbol>
+    <symbol id="i-exit" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4.5H6.5v15H14"/><path d="M11 12h9"/><path d="m17 9 3 3-3 3"/></g></symbol>
+  </svg>
+
+  <!-- Ignition sound. Plays only on a deliberate engine start (see app.js). -->
   <audio id="engine-audio" preload="auto" src="engine-start.wav"></audio>
 
-  <script src="script.js?v=5"></script>
+  <script src="script.js?v=8"></script>
+  <script src="app.js?v=1"></script>
 
   <!-- ══ OFFLINE SUPPORT ══ Service worker pre-caches the engine (see sw.js).
        Ignored by file:// and other insecure contexts — the app just runs online. -->

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
@@ -180,6 +180,43 @@ public class ConnectivityHelper : IDisposable
                     }
                 }
                 catch { }
+            }
+            else if (msg.Contains("set_volume:"))
+            {
+                // The JS sends {"action":"set_volume:NN"}. Parsed strictly rather
+                // than substring-matched, so nothing else can land here.
+                int idx = msg.IndexOf("set_volume:", StringComparison.Ordinal) + "set_volume:".Length;
+                int end = msg.IndexOf('"', idx);
+                string raw = end > idx ? msg.Substring(idx, end - idx) : "";
+                if (int.TryParse(raw, out int vol))
+                {
+                    var aev = GetAudioEndpointVolume();
+                    if (aev != null)
+                    {
+                        aev.SetMasterVolumeLevelScalar(Math.Clamp(vol, 0, 100) / 100f, Guid.Empty);
+                        SendConnectivityData();   // report the value the OS accepted
+                    }
+                }
+            }
+            else if (msg.Contains("set_mute:"))
+            {
+                bool muted = msg.Contains("set_mute:1") || msg.Contains("set_mute:true");
+                var aev = GetAudioEndpointVolume();
+                if (aev != null)
+                {
+                    aev.SetMute(muted, Guid.Empty);
+                    SendConnectivityData();
+                }
+            }
+            else if (msg.Contains("\"action\":\"quit\""))
+            {
+                // Only the explicit action string can close the app — there is
+                // no shell, no arbitrary command, no path from the web content
+                // to anything else.
+                System.Windows.Application.Current?.Dispatcher.Invoke(() =>
+                {
+                    System.Windows.Application.Current.Shutdown();
+                });
             }
             else if (msg.Contains("toggle_mute"))
             {

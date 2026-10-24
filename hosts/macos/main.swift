@@ -65,6 +65,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
         if let action = panes.keys.first(where: { msgStr.contains($0) }),
            let url = URL(string: panes[action]!) {
             NSWorkspace.shared.open(url)
+        } else if msgStr.contains("\"action\":\"quit\"") {
+            NSApp.terminate(nil)
         } else if msgStr.contains("hide_fallback") {
             print("[macOS Host] Engine reported ready.")
         } else if msgStr.contains("log_time") {
