@@ -591,7 +591,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            MessageBox.Show(message, "NIGHTDRIVE Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            System.Windows.MessageBox.Show(message, "NIGHTDRIVE Error", MessageBoxButton.OK, MessageBoxImage.Error);
             WpfApp.Current.Shutdown();
         }
         catch (Exception ex)
@@ -604,7 +604,7 @@ public partial class MainWindow : Window
     {
         try
         {
-            MessageBox.Show(message, "NIGHTDRIVE Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show(message, "NIGHTDRIVE Warning", MessageBoxButton.OK, MessageBoxImage.Warning);
         }
         catch (Exception ex)
         {

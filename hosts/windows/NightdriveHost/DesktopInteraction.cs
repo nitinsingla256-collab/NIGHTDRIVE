@@ -93,6 +93,17 @@ public static class DesktopInteraction
         }
     }
 
+    public static bool IsRaised
+    {
+        get
+        {
+            lock (Gate)
+            {
+                return _raised;
+            }
+        }
+    }
+
     /// <summary>
     /// Detaches the wallpaper from WorkerW and puts it above the desktop icon
     /// layer. The window is not activated by this operation; it can receive

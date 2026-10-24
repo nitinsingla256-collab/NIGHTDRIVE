@@ -226,7 +226,8 @@ public static class WallpaperHelper
             bool isWindow = IsWindow(hwnd);
             bool visible = isWindow && IsWindowVisible(hwnd);
             IntPtr parent = isWindow ? GetParent(hwnd) : IntPtr.Zero;
-            bool haveRect = isWindow && GetWindowRect(hwnd, out RECT rect);
+            RECT rect = default;
+            bool haveRect = isWindow && GetWindowRect(hwnd, out rect);
             string bounds = haveRect ? RectText(rect) : "<unavailable>";
             Log($"{label}: hwnd={Hex(hwnd)}, IsWindow={isWindow}, IsWindowVisible={visible}, " +
                 $"GetParent={Hex(parent)}, GetWindowRect={bounds}, error={Marshal.GetLastWin32Error()}");
