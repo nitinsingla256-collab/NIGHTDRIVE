@@ -234,6 +234,20 @@
   var openTimer = null;
   var closeTimer = null;
 
+  function tellNativeDrawerState(open) {
+    try {
+      // The Windows host raises the HWND when it receives drawer:open and
+      // reparents it behind Explorer again on drawer:closed. postToHost still
+      // sends the message when nativeHostActive is false; its return value is
+      // only a capability probe, not a delivery gate.
+      if (ND.platform && ND.platform.webview2 && typeof ND.postToHost === 'function') {
+        ND.postToHost('drawer:' + (open ? 'open' : 'closed'));
+      }
+    } catch (e) {
+      console.warn('[NIGHTDRIVE] drawer bridge message failed', e);
+    }
+  }
+
   function setDrawer(open, opts) {
     if (!drawer || !trigger) return;
     var o = opts || {};
@@ -251,9 +265,11 @@
     } else if (document.activeElement && drawer.contains(document.activeElement)) {
       trigger.focus();
     }
+    tellNativeDrawerState(open);
   }
 
   function openDrawer() {
+    if (!S.drawerEnabled) return;
     clearTimeout(closeTimer);
     clearTimeout(openTimer);
     openTimer = setTimeout(function () { setDrawer(true); }, 90);
@@ -292,6 +308,7 @@
     }, { passive: true });
 
     trigger.addEventListener('click', function () {
+      if (!S.drawerEnabled) return;
       setDrawer(!drawerOpen);
       if (drawerOpen) focusFirst(drawer);
     });
@@ -299,6 +316,26 @@
     trigger.addEventListener('focus', function () {
       if (S.drawerEnabled) setDrawer(true);
     });
+
+    // Ctrl+Alt+N and the tray menu are the native entry points when the
+    // wallpaper is still sunk behind the desktop icon layer. script.js owns
+    // the early WebView2 listener and latches a request if this file has not
+    // reached DOMContentLoaded yet.
+    if (ND.platform && ND.platform.webview2) {
+      var openNativeDrawer = function () {
+        try {
+          window.__nightdriveDrawerOpen = false;
+          clearTimeout(closeTimer);
+          clearTimeout(openTimer);
+          setDrawer(true, { force: true });
+          focusFirst(drawer);
+        } catch (e) {
+          console.warn('[NIGHTDRIVE] native drawer message failed', e);
+        }
+      };
+      window.addEventListener('nightdrive-drawer-open', openNativeDrawer);
+      if (window.__nightdriveDrawerOpen) openNativeDrawer();
+    }
 
     drawer.addEventListener('focusin', function () { clearTimeout(closeTimer); });
     drawer.addEventListener('focusout', function () { scheduleClose(); });

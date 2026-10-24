@@ -6,19 +6,16 @@ using Microsoft.Web.WebView2.Wpf;
 namespace NightdriveHost;
 
 /// <summary>
-/// Reads the Windows battery state via System.Windows.Forms.PowerStatus
-/// and forwards it to the WebView2 page as a JSON message every 30 seconds.
-///
-/// The JS page listens via:
-///   window.chrome.webview.addEventListener('message', handler);
-///
-/// Message shape:
-///   { "type": "battery", "percent": 78, "charging": false }
+/// Reads the Windows battery state via PowerStatus and forwards it to the
+/// WebView2 page. All timer and bridge handlers are guarded so a transient
+/// WebView2 shutdown cannot take down the wallpaper host.
 /// </summary>
 public class BatteryHelper : IDisposable
 {
     private readonly WebView2 _webView;
     private System.Windows.Threading.DispatcherTimer? _timer;
+
+    public Action<string>? OnLogTime { get; set; }
 
     public BatteryHelper(WebView2 webView)
     {
@@ -27,45 +24,62 @@ public class BatteryHelper : IDisposable
 
     public void Start()
     {
-        // Send immediately on first call
-        SendBatteryData();
-
-        _timer = new System.Windows.Threading.DispatcherTimer
+        try
         {
-            Interval = TimeSpan.FromSeconds(30)
-        };
-        _timer.Tick += (_, _) => SendBatteryData();
-        _timer.Start();
+            if (_timer != null) return;
+
+            SendBatteryData();
+            _timer = new System.Windows.Threading.DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(30)
+            };
+            _timer.Tick += OnTimerTick;
+            _timer.Start();
+            Log("battery bridge started");
+        }
+        catch (Exception ex)
+        {
+            Log($"battery bridge start exception: {ex}");
+        }
     }
 
-    public void Stop() => _timer?.Stop();
+    private void OnTimerTick(object? sender, EventArgs e)
+    {
+        try { SendBatteryData(); }
+        catch (Exception ex) { Log($"battery timer exception: {ex}"); }
+    }
+
+    public void Stop()
+    {
+        try { _timer?.Stop(); }
+        catch (Exception ex) { Log($"battery timer stop exception: {ex}"); }
+    }
 
     private void SendBatteryData()
     {
         try
         {
-            if (_webView.CoreWebView2 == null) return;
+            if (_webView.CoreWebView2 == null)
+            {
+                Log("battery bridge skipped: CoreWebView2 is not ready");
+                return;
+            }
 
             PowerStatus ps = SystemInformation.PowerStatus;
-
-            // BatteryLifePercent returns 255 (0xFF) when status is unknown
             float rawPct = ps.BatteryLifePercent;
             if (rawPct < 0 || rawPct > 1)
             {
-                // Unavailable
                 SendJson(new { type = "battery", available = false });
                 return;
             }
 
             bool charging = ps.PowerLineStatus == PowerLineStatus.Online;
-            int percent   = (int)Math.Round(rawPct * 100);
-
+            int percent = (int)Math.Round(rawPct * 100);
             SendJson(new { type = "battery", available = true, percent, charging });
         }
         catch (Exception ex)
         {
-            // Don't crash the host; just log
-            System.Diagnostics.Debug.WriteLine($"[Battery] Error: {ex.Message}");
+            Log($"battery read exception: {ex}");
         }
     }
 
@@ -73,14 +87,32 @@ public class BatteryHelper : IDisposable
     {
         try
         {
+            if (_webView.CoreWebView2 == null) return;
             string json = JsonSerializer.Serialize(payload);
             _webView.CoreWebView2.PostWebMessageAsJson(json);
         }
-        catch { /* WebView2 may not be ready yet */ }
+        catch (Exception ex)
+        {
+            Log($"battery bridge message exception: {ex}");
+        }
     }
 
     public void Dispose()
     {
-        _timer?.Stop();
+        try
+        {
+            Stop();
+            _timer = null;
+        }
+        catch (Exception ex)
+        {
+            Log($"battery dispose exception: {ex}");
+        }
+    }
+
+    private void Log(string message)
+    {
+        try { OnLogTime?.Invoke("[Battery] " + message); }
+        catch { /* logging must never take down the host */ }
     }
 }

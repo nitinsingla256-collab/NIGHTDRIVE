@@ -1,7 +1,9 @@
-﻿using System;
+using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Windows.Threading;
 using Microsoft.Web.WebView2.Wpf;
 using Windows.Devices.Radios;
@@ -9,14 +11,17 @@ using Windows.Devices.Radios;
 namespace NightdriveHost;
 
 /// <summary>
-/// Reads system connectivity state (Wi-Fi, Bluetooth, Audio) and handles UI messages.
+/// Reads system connectivity/audio state and handles the small, explicit
+/// message bridge exposed to the wallpaper page. No arbitrary command or path
+/// from the page reaches Process.Start.
 /// </summary>
 public class ConnectivityHelper : IDisposable
 {
     private readonly WebView2 _webView;
     private DispatcherTimer? _timer;
+    private bool? _bluetoothState;
 
-    // CoreAudio COM Interfaces
+    // CoreAudio COM interfaces.
     [ComImport]
     [Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
     private interface IAudioEndpointVolume
@@ -49,23 +54,30 @@ public class ConnectivityHelper : IDisposable
     [Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
     private class MMDeviceEnumeratorComObject { }
 
-    private bool _hasBluetooth = true; // Default assumption until proven otherwise
     public Action? OnHideFallback { get; set; }
+    public Action? OnDrawerOpen { get; set; }
+    public Action? OnDrawerClosed { get; set; }
     public Action<string>? OnLogTime { get; set; }
 
     public ConnectivityHelper(WebView2 webView)
     {
         _webView = webView;
-        if (_webView.CoreWebView2 != null) {
-            _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
-        } else {
-            _webView.WebMessageReceived += OnWebMessageReceived;
+        try
+        {
+            if (_webView.CoreWebView2 != null)
+                _webView.CoreWebView2.WebMessageReceived += OnWebMessageReceived;
+            else
+                _webView.WebMessageReceived += OnWebMessageReceived;
+
+            _ = CheckBluetoothSupportAsync();
         }
-        
-        CheckBluetoothSupportAsync();
+        catch (Exception ex)
+        {
+            Log($"connectivity constructor exception: {ex}");
+        }
     }
 
-    private async void CheckBluetoothSupportAsync()
+    private async System.Threading.Tasks.Task CheckBluetoothSupportAsync()
     {
         try
         {
@@ -74,41 +86,65 @@ public class ConnectivityHelper : IDisposable
             {
                 if (radio.Kind == RadioKind.Bluetooth)
                 {
-                    _hasBluetooth = radio.State == RadioState.On;
+                    _bluetoothState = radio.State == RadioState.On;
+                    Log($"Bluetooth radio state={_bluetoothState}");
                     return;
                 }
             }
-            _hasBluetooth = false; // No bluetooth radio found
+
+            _bluetoothState = false;
+            Log("Bluetooth radio not found");
         }
-        catch
+        catch (Exception ex)
         {
-            // Ignore if OS does not support
+            // A host without the Windows radio API should report n/a, not a
+            // guessed state, in the drawer.
+            _bluetoothState = null;
+            Log($"Bluetooth probe exception: {ex}");
         }
     }
 
     public void Start()
     {
-        SendConnectivityData();
-
-        _timer = new DispatcherTimer
+        try
         {
-            Interval = TimeSpan.FromSeconds(2) // Check more frequently for volume changes
-        };
-        _timer.Tick += (_, _) => SendConnectivityData();
-        _timer.Start();
+            if (_timer != null) return;
+
+            SendConnectivityData();
+            _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+            _timer.Tick += OnTimerTick;
+            _timer.Start();
+            Log("connectivity bridge started");
+        }
+        catch (Exception ex)
+        {
+            Log($"connectivity bridge start exception: {ex}");
+        }
     }
 
-    public void Stop() => _timer?.Stop();
+    private void OnTimerTick(object? sender, EventArgs e)
+    {
+        try { SendConnectivityData(); }
+        catch (Exception ex) { Log($"connectivity timer exception: {ex}"); }
+    }
+
+    public void Stop()
+    {
+        try { _timer?.Stop(); }
+        catch (Exception ex) { Log($"connectivity timer stop exception: {ex}"); }
+    }
 
     private void SendConnectivityData()
     {
         try
         {
-            if (_webView.CoreWebView2 == null) return;
+            if (_webView.CoreWebView2 == null)
+            {
+                Log("connectivity bridge skipped: CoreWebView2 is not ready");
+                return;
+            }
 
             bool isNetworkAvailable = NetworkInterface.GetIsNetworkAvailable();
-            
-            // Audio Volume Polling
             int? audioPct = null;
             bool isMuted = false;
             var aev = GetAudioEndpointVolume();
@@ -122,117 +158,241 @@ public class ConnectivityHelper : IDisposable
             var payload = new
             {
                 type = "connectivity",
+                // This is deliberately named network reachability in the page;
+                // it is not a claim about the Wi-Fi radio.
                 wifi = isNetworkAvailable,
-                bt = _hasBluetooth,
+                bt = _bluetoothState,
                 audio = audioPct,
                 muted = isMuted
             };
 
-            string json = System.Text.Json.JsonSerializer.Serialize(payload);
+            string json = JsonSerializer.Serialize(payload);
             _webView.CoreWebView2.PostWebMessageAsJson(json);
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ConnectivityHelper] Error: {ex.Message}");
+            Log($"connectivity read/send exception: {ex}");
         }
     }
 
-    private void OnWebMessageReceived(object? sender, Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    private void OnWebMessageReceived(
+        object? sender,
+        Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
     {
         try
         {
-            string msg = e.WebMessageAsJson;
-            if (msg.Contains("open_wifi_settings"))
+            string raw = ReadWebMessage(e);
+            string? action = ExtractAction(raw);
+            Log($"drawbridge message: action={action ?? "<unparsed>"}, raw={raw}");
+            if (string.IsNullOrEmpty(action)) return;
+
+            if (action == "hello")
             {
-                // explorer.exe ms-availablenetworks: reliably opens the Windows 10 Wi-Fi network taskbar flyout
-                Process.Start(new ProcessStartInfo("explorer.exe", "ms-availablenetworks:") { UseShellExecute = true });
+                SendHostReady();
             }
-            else if (msg.Contains("open_bt_settings"))
+            else if (action == "open_wifi_settings")
             {
-                Process.Start(new ProcessStartInfo("ms-settings:bluetooth") { UseShellExecute = true });
+                Launch("explorer.exe", "ms-availablenetworks:");
             }
-            else if (msg.Contains("open_sound_settings"))
+            else if (action == "open_bt_settings")
             {
-                // sndvol.exe -f reliably opens the Windows 10 master volume taskbar flyout
-                Process.Start(new ProcessStartInfo("sndvol.exe", "-f") { UseShellExecute = true });
+                Launch("ms-settings:bluetooth", null);
             }
-            else if (msg.Contains("open_focus_settings"))
+            else if (action == "open_sound_settings")
             {
-                Process.Start(new ProcessStartInfo("ms-settings:quietmomentshome") { UseShellExecute = true });
+                Launch("sndvol.exe", "-f");
             }
-            else if (msg.Contains("hide_fallback"))
+            else if (action == "open_focus_settings")
+            {
+                Launch("ms-settings:quietmomentshome", null);
+            }
+            else if (action == "hide_fallback")
             {
                 OnHideFallback?.Invoke();
             }
-            else if (msg.Contains("log_time:"))
+            else if (action.StartsWith("log_time:", StringComparison.Ordinal))
             {
-                // parse action: "log_time:..."
-                try
-                {
-                    var data = System.Text.Json.JsonDocument.Parse(msg);
-                    if (data.RootElement.TryGetProperty("action", out var actionElem))
-                    {
-                        string actionStr = actionElem.GetString() ?? "";
-                        if (actionStr.StartsWith("log_time:"))
-                        {
-                            OnLogTime?.Invoke(actionStr.Substring(9));
-                        }
-                    }
-                }
-                catch { }
+                OnLogTime?.Invoke(action.Substring("log_time:".Length));
             }
-            else if (msg.Contains("set_volume:"))
+            else if (action == "drawer:open")
             {
-                // The JS sends {"action":"set_volume:NN"}. Parsed strictly rather
-                // than substring-matched, so nothing else can land here.
-                int idx = msg.IndexOf("set_volume:", StringComparison.Ordinal) + "set_volume:".Length;
-                int end = msg.IndexOf('"', idx);
-                string raw = end > idx ? msg.Substring(idx, end - idx) : "";
-                if (int.TryParse(raw, out int vol))
-                {
-                    var aev = GetAudioEndpointVolume();
-                    if (aev != null)
-                    {
-                        aev.SetMasterVolumeLevelScalar(Math.Clamp(vol, 0, 100) / 100f, Guid.Empty);
-                        SendConnectivityData();   // report the value the OS accepted
-                    }
-                }
+                OnDrawerOpen?.Invoke();
             }
-            else if (msg.Contains("set_mute:"))
+            else if (action == "drawer:closed")
             {
-                bool muted = msg.Contains("set_mute:1") || msg.Contains("set_mute:true");
-                var aev = GetAudioEndpointVolume();
-                if (aev != null)
-                {
-                    aev.SetMute(muted, Guid.Empty);
-                    SendConnectivityData();
-                }
+                OnDrawerClosed?.Invoke();
             }
-            else if (msg.Contains("\"action\":\"quit\""))
+            else if (action.StartsWith("set_volume:", StringComparison.Ordinal))
             {
-                // Only the explicit action string can close the app — there is
-                // no shell, no arbitrary command, no path from the web content
-                // to anything else.
+                HandleSetVolume(action.Substring("set_volume:".Length));
+            }
+            else if (action.StartsWith("set_mute:", StringComparison.Ordinal))
+            {
+                HandleSetMute(action.Substring("set_mute:".Length));
+            }
+            else if (action == "toggle_mute")
+            {
+                ToggleMute();
+            }
+            else if (action == "quit")
+            {
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                 {
-                    System.Windows.Application.Current.Shutdown();
+                    try { System.Windows.Application.Current?.Shutdown(); }
+                    catch (Exception ex) { Log($"quit handler exception: {ex}"); }
                 });
-            }
-            else if (msg.Contains("toggle_mute"))
-            {
-                var aev = GetAudioEndpointVolume();
-                if (aev != null)
-                {
-                    aev.GetMute(out bool isMuted);
-                    aev.SetMute(!isMuted, Guid.Empty);
-                    SendConnectivityData(); // Update immediately
-                }
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[ConnectivityHelper] Message Error: {ex.Message}");
+            Log($"drawbridge handler exception: {ex}");
         }
+    }
+
+    private void HandleSetVolume(string raw)
+    {
+        try
+        {
+            if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int requested))
+            {
+                Log($"set_volume rejected: raw={raw}");
+                return;
+            }
+
+            int volume = Math.Clamp(requested, 0, 100);
+            var aev = GetAudioEndpointVolume();
+            if (aev == null)
+            {
+                Log("set_volume skipped: audio endpoint unavailable");
+                return;
+            }
+
+            aev.SetMasterVolumeLevelScalar(volume / 100f, Guid.Empty);
+            Log($"set_volume applied: requested={requested}, clamped={volume}");
+            SendConnectivityData();
+        }
+        catch (Exception ex)
+        {
+            Log($"set_volume exception: {ex}");
+        }
+    }
+
+    private void HandleSetMute(string raw)
+    {
+        try
+        {
+            bool? muted = raw switch
+            {
+                "1" or "true" => true,
+                "0" or "false" => false,
+                _ => null
+            };
+            if (!muted.HasValue)
+            {
+                Log($"set_mute rejected: raw={raw}");
+                return;
+            }
+
+            var aev = GetAudioEndpointVolume();
+            if (aev == null)
+            {
+                Log("set_mute skipped: audio endpoint unavailable");
+                return;
+            }
+
+            aev.SetMute(muted.Value, Guid.Empty);
+            Log($"set_mute applied: muted={muted.Value}");
+            SendConnectivityData();
+        }
+        catch (Exception ex)
+        {
+            Log($"set_mute exception: {ex}");
+        }
+    }
+
+    private void ToggleMute()
+    {
+        try
+        {
+            var aev = GetAudioEndpointVolume();
+            if (aev == null)
+            {
+                Log("toggle_mute skipped: audio endpoint unavailable");
+                return;
+            }
+
+            aev.GetMute(out bool isMuted);
+            aev.SetMute(!isMuted, Guid.Empty);
+            Log($"toggle_mute applied: muted={!isMuted}");
+            SendConnectivityData();
+        }
+        catch (Exception ex)
+        {
+            Log($"toggle_mute exception: {ex}");
+        }
+    }
+
+    private void SendHostReady()
+    {
+        try
+        {
+            if (_webView.CoreWebView2 == null) return;
+            string json = JsonSerializer.Serialize(new { type = "host", active = true });
+            _webView.CoreWebView2.PostWebMessageAsJson(json);
+            Log("host hello acknowledged");
+        }
+        catch (Exception ex)
+        {
+            Log($"host hello response exception: {ex}");
+        }
+    }
+
+    private static string ReadWebMessage(
+        Microsoft.Web.WebView2.Core.CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        try
+        {
+            return e.TryGetWebMessageAsString();
+        }
+        catch
+        {
+            return e.WebMessageAsJson;
+        }
+    }
+
+    private static string? ExtractAction(string raw)
+    {
+        try
+        {
+            using JsonDocument document = JsonDocument.Parse(raw);
+            return ExtractAction(document.RootElement);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? ExtractAction(JsonElement root)
+    {
+        if (root.ValueKind == JsonValueKind.String)
+        {
+            string? nested = root.GetString();
+            return string.IsNullOrEmpty(nested) ? null : ExtractAction(nested);
+        }
+
+        if (root.ValueKind == JsonValueKind.Object && root.TryGetProperty("action", out JsonElement action))
+            return action.ValueKind == JsonValueKind.String ? action.GetString() : null;
+
+        return null;
+    }
+
+    private static void Launch(string fileName, string? arguments)
+    {
+        Process.Start(new ProcessStartInfo(fileName, arguments ?? string.Empty)
+        {
+            UseShellExecute = true
+        });
     }
 
     private IAudioEndpointVolume? GetAudioEndpointVolume()
@@ -257,15 +417,24 @@ public class ConnectivityHelper : IDisposable
 
     public void Dispose()
     {
-        Stop();
-        if (_webView != null)
+        try
         {
-            if (_webView.CoreWebView2 != null) {
+            Stop();
+            if (_webView.CoreWebView2 != null)
                 _webView.CoreWebView2.WebMessageReceived -= OnWebMessageReceived;
-            } else {
+            else
                 _webView.WebMessageReceived -= OnWebMessageReceived;
-            }
+            _timer = null;
         }
-        _timer = null;
+        catch (Exception ex)
+        {
+            Log($"connectivity dispose exception: {ex}");
+        }
+    }
+
+    private void Log(string message)
+    {
+        try { OnLogTime?.Invoke("[Connectivity] " + message); }
+        catch { /* logging must never take down the host */ }
     }
 }

@@ -77,8 +77,27 @@ const REDUCED_MOTION = window.matchMedia
 // Set to true once a native host actually talks to us (WebView2 is also used
 // by generic wallpaper apps such as Lively, which don't answer messages).
 let nativeHostActive = false;
+// The native hotkey can arrive while the document is still loading. Keep the
+// request in a tiny page-level latch so app.js can consume it after its own
+// DOM-ready binding is installed.
+window.__nightdriveDrawerOpen = false;
 if (PLATFORM.webview2) {
-  window.chrome.webview.addEventListener('message', function () { nativeHostActive = true; });
+  window.chrome.webview.addEventListener('message', function (event) {
+    try {
+      nativeHostActive = true;
+      let data = event.data;
+      if (typeof data === 'string') data = JSON.parse(data);
+      if (typeof data === 'string') data = JSON.parse(data);
+      if (data && data.action === 'drawer:open') {
+        window.__nightdriveDrawerOpen = true;
+        if (typeof window.Event === 'function') window.dispatchEvent(new Event('nightdrive-drawer-open'));
+      }
+    } catch (e) {
+      // A connectivity or battery message is allowed to be handled by its
+      // specialised listener below; it is not a drawer request.
+      nativeHostActive = true;
+    }
+  });
 }
 
 function postToHost(action) {
@@ -621,7 +640,7 @@ function setWifiState(online) {
   } else {
     wifiBtn.classList.add('is-off');
     wifiBtn.classList.remove('is-on');
-    wifiStatus.textContent = 'Off';
+    wifiStatus.textContent = 'Offline';
   }
 }
 
@@ -643,8 +662,9 @@ function setBtState(enabled) {
 }
 
 function updateConnectivity(wifi, bt, audioPct, isMuted) {
-  // Update left panel
-  setWifiState(wifi === true ? true : navigator.onLine);
+  // A native false is meaningful: it is offline. Only fall back to the
+  // browser's reachability hint when no host value was supplied.
+  setWifiState(typeof wifi === 'boolean' ? wifi : navigator.onLine);
   setBtState(bt);
 
   // Audio on left panel
