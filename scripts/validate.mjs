@@ -126,6 +126,33 @@ if (existsSync(csprojPath)) {
     'DOMContentLoaded subscription precedes Navigate');
   check(/drawbridge message/.test(connectivity) && /TryGetWebMessageAsString/.test(connectivity),
     'native bridge logs and parses page messages');
+
+  // C# cannot overload methods by accessibility or extern modifier alone;
+  // catch P/Invoke vs wrapper signature collisions on Linux before Windows CI.
+  const csMethodDupes = [];
+  const csFiles = ['App.xaml.cs', 'MainWindow.xaml.cs', 'BatteryHelper.cs',
+                   'ConnectivityHelper.cs', 'DesktopInteraction.cs',
+                   'TrayIconHelper.cs', 'WallpaperHelper.cs'];
+  const methodDeclRe = /\b(?:public|private|protected|internal)\s+(?:(?:static|extern|async|override|virtual|partial|unsafe)\s+)*(?!delegate\b)[\w.<>?\[\]]+\s+(\w+)\s*\(([^)]*)\)\s*(?:;|\{|=>)/g;
+  for (const f of csFiles) {
+    const src = readFileSync(join(win, f), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/\/\/[^\n]*/g, '');
+    const seen = new Set();
+    for (const [, name, rawParams] of src.matchAll(methodDeclRe)) {
+      const paramSig = rawParams.trim() === '' ? '' : rawParams.split(',').map((p) => {
+        const tokens = p.replace(/\[[^\]]*\]/g, '').replace(/=.*$/, '').trim().split(/\s+/);
+        return tokens.slice(0, -1).join(' ');
+      }).join(',');
+      const sig = `${name}(${paramSig})`;
+      if (seen.has(sig)) csMethodDupes.push(`${f}: ${sig}`);
+      seen.add(sig);
+    }
+  }
+  check(csMethodDupes.length === 0,
+    csMethodDupes.length
+      ? `duplicate C# method signature(s): ${csMethodDupes.join('; ')}`
+      : 'no duplicate C# method signatures across Windows host');
 }
 
 console.log('Scene image quality');
