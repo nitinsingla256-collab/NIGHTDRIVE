@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.5.0] — 2026-10-24
+
+Second visual pass: brief-compliance and asset-pipeline work. No framework, no
+architecture change, no new runtime dependency.
+
+### Fixed
+- **Baked-in branding removed.** All six plates carried a small "392" model
+  badge on the grille, which the brief forbids. It is now retouched out with a
+  feathered mask-based inpaint and the result is recorded in
+  `assets/manifest.json`; `npm test` fails if that receipt is missing or if any
+  plate shows no retouch. A brightness clamp was tried first and rejected: some
+  glyphs are *darker* than the grille, and on the dusk plates the grille is a
+  lit gradient, so any rectangular patch left a visible seam.
+- **Portrait and tall assets are never stretched or blind-cropped.** A plate
+  taller than 4:5 is now shown whole (`object-fit: contain`) over a blurred,
+  dimmed copy of itself. Previously a 1080×1920 asset on a 1920×1080 screen
+  would have been blown up 1.78× with 68 % of it thrown away.
+- **The car stays framed on narrow viewports.** Each period has a `focus`
+  point (the car's position in the plate) used as `object-position`. On a
+  540×960 viewport the old centre crop cut the front wheel and both wheels'
+  contact patches; the car-aware crop keeps the whole car.
+- Aspect handling re-evaluates on resize and monitor rotation (debounced), so
+  a portrait plate is picked up without reloading.
+
+### Changed
+- `ASSETS` is now derived from a new `SCENE_ASSETS` table that separates
+  `landscape`, `portrait`, `cursor` (car layer) and `focus` per period, laying
+  in the seams a customisation phase needs to swap car and environment
+  independently. `ASSETS.scene` still resolves to the landscape list, so every
+  existing consumer keeps working.
+- `portrait` and `cursor` candidate lists are probed with the existing ordered
+  fallback loader, so absent files cost one 404 the first time and are cached
+  as unavailable.
+- Scene plates regenerated from pristine sources in a single pass
+  (grade → retouch → encode), so the shipped files have been through exactly
+  one JPEG generation.
+
+### Added
+- `npm test` executes the engine under three viewport/asset combinations and
+  asserts portrait selection, landscape fallback, contain-not-crop and the
+  focal crop.
+- `scripts/asset-grades.json` stores the fitted dusk→night/midnight grade as
+  data, so the derived plates are reproducible without re-fitting.
+- `scripts/rebuild-assets.py` takes `--from DIRECTORY` to rebuild from pristine
+  plates, and records a retouch receipt in the manifest.
+- `assets/README.md` documents the car/landscape slots and lists the missing
+  assets explicitly.
+
+### Not done (deliberately)
+- No customisation UI. This phase only prepares the pipeline and the slots.
+- No new plates: the target direction names Porsche GT3 RS-style cars and
+  EV/sports photography that is not present in the repo, and inventing asset
+  paths for files that do not exist would break the offline cache.
+
 ## [1.4.0] — 2026-10-24
 
 Photorealism and visual-quality pass. No framework, no architecture change.

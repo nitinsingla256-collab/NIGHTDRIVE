@@ -13,7 +13,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@400;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
 
-  <link rel="stylesheet" href="styles.css?v=7" />
+  <link rel="stylesheet" href="styles.css?v=8" />
 </head>
 <body>
 
@@ -24,7 +24,10 @@
     <div class="layer is-visible" data-layer="a">
       <div class="scene-fallback" data-period="night"></div>
       <div class="svg-scene"></div>
-      <img class="scene-img" alt="" loading="eager" />
+      <!-- Background plate. `sizes`/`media` let a future portrait asset be
+           picked instead of a landscape one, so nothing is ever stretched or
+           blindly cropped. script.js fills these in per period. -->
+      <img class="scene-img" alt="" loading="eager" decoding="async" />
       <div class="svg-headlights"></div>
       <img class="headlight-img" alt="" />
     </div>
@@ -33,7 +36,10 @@
     <div class="layer" data-layer="b">
       <div class="scene-fallback" data-period="night"></div>
       <div class="svg-scene"></div>
-      <img class="scene-img" alt="" loading="eager" />
+      <!-- Background plate. `sizes`/`media` let a future portrait asset be
+           picked instead of a landscape one, so nothing is ever stretched or
+           blindly cropped. script.js fills these in per period. -->
+      <img class="scene-img" alt="" loading="eager" decoding="async" />
       <div class="svg-headlights"></div>
       <img class="headlight-img" alt="" />
     </div>
@@ -141,7 +147,7 @@
   <!-- Ignition sound. Plays with the cinematic startup; browsers that block autoplay defer it to the first click. -->
   <audio id="engine-audio" preload="auto" src="engine-start.wav"></audio>
 
-  <script src="script.js?v=6"></script>
+  <script src="script.js?v=7"></script>
 
   <!-- ══ OFFLINE SUPPORT ══ Service worker pre-caches the engine (see sw.js).
        Ignored by file:// and other insecure contexts — the app just runs online. -->

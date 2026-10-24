@@ -1,31 +1,49 @@
 #!/usr/bin/env python3
 """
-NIGHTDRIVE — asset rebuild (Phase 1: photorealism pass).
+NIGHTDRIVE — asset rebuild (Phase 1 photorealism + Phase 1b compliance pass).
 
 What this does and why
 ──────────────────────
-`night/scene.jpg` and `midnight/scene.jpg` were shipped at 0.6–0.8 bits/pixel
-(q≈90 tables, but almost all AC energy discarded). That is roughly 5× heavier
-compression than the other four plates and it is what produced the blocky,
-posterised sky at night. The two plates are, however, *pure per-channel colour
-grades of `dusk/scene.jpg`*: fitting a monotonic lookup table per channel
-leaves a residual of ~1 luminance level, i.e. JPEG noise.
+1. NIGHT / MIDNIGHT are rebuilt from the sharp DUSK master.
+   The shipped `night/scene.jpg` and `midnight/scene.jpg` were 0.82 and
+   0.59 bits/pixel — about 5x heavier compression than the other four plates,
+   which is what made the night sky blocky. They are, however, pure per-channel
+   colour grades of the dusk frame: fitting a monotonic lookup table per
+   channel leaves ~1 luminance level of residual, i.e. JPEG noise.
 
-So this script rebuilds night and midnight from the sharp dusk master by
-re-applying that exact grade. No detail is invented — the detail that the
-original encodes threw away is simply carried over from the plate that still
-has it. The 2.1 MP `moon.jpg` photographic plate is then composited in place
-of the blurry 40 px moon.
+   So the grade in `scripts/asset-grades.json` is applied to the dusk plate,
+   which still carries the detail. Nothing is invented.
 
-Finally every plate is re-encoded with 4:4:4 chroma (no colour subsampling)
-so the car's edges and the sky gradients survive, which 4:2:0 was smearing.
+2. THE MODEL BADGE IS RETOUCHED OUT.
+   All six plates carry a small "392" model badge on the grille. The project
+   brief forbids baked-in model names and logos, so it is painted out: the
+   pixels are clamped to the grille colour measured either side of the badge,
+   then the patch is feathered. This is ordinary photographic retouching and
+   is applied identically to all six plates so the crossfade stays clean.
 
-Usage:  python3 scripts/rebuild-assets.py
+3. The photographic moon is composited into night and midnight, replacing the
+   blurry ~40 px moon that was in the original plates.
+
+4. Everything is encoded once, at the end, with 4:4:4 chroma.
+
+Order matters: grade -> retouch -> encode means the shipped files have been
+through exactly one JPEG generation. Re-running this script on its own output
+would add a generation, so it is meant to run from pristine plates.
+
+Usage:
+    python3 scripts/rebuild-assets.py [--from DIR]
+
+    --from DIR   read pristine source plates from DIR (expects
+                 morning.jpg, day.jpg, ... in that folder). Without it the
+                 script reads `engine/assets/<period>/scene.jpg` in place.
+
 Requires: pillow, numpy, opencv-python-headless
 """
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -35,13 +53,24 @@ from PIL import Image, ImageFilter
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSETS = ROOT / "engine" / "assets"
+GRADES = Path(__file__).resolve().parent / "asset-grades.json"
 
-# Where the blurry moon sits in the night/midnight plates (1376×768 space).
+PERIODS = ["morning", "day", "golden-hour", "dusk", "night", "midnight"]
+DERIVED = {"night": (1.00, (0.98, 1.00, 1.05)), "midnight": (0.80, (0.95, 1.00, 1.12))}
+
+# Where the blurry moon sits in the night/midnight plates (1376x768 space).
 MOON_CX, MOON_CY, MOON_R = 908.0, 290.5, 23.0
 
-# JPEG output settings: 4:4:4 chroma, progressive, quality 90.
+# The "392" model badge on the grille, measured from the plates. It sits in the
+# same place in all six (the camera and car are identical between the two
+# compositions, and this part of the grille is inside both crops).
+BADGE_BOX = (794, 600, 828, 614)
+
+# JPEG output: 4:4:4 chroma (no subsampling), progressive, quality 95.
 JPEG_KW = dict(quality=95, subsampling=0, optimize=True, progressive=True)
 
+
+# ── moon ──────────────────────────────────────────────────────────────────────
 
 def build_moon_layer() -> Image.Image:
     """Cut the photographic moon disc out of moon.jpg with a feathered limb."""
@@ -55,7 +84,7 @@ def build_moon_layer() -> Image.Image:
     pad = 10
     box = (int(cx - r - pad), int(cy - r - pad), int(cx + r + pad), int(cy + r + pad))
     disc = moon.crop(box)
-    if disc.width != disc.height:  # normalise to a square
+    if disc.width != disc.height:
         s = max(disc.size)
         sq = Image.new("RGB", (s, s), (0, 0, 0))
         sq.paste(disc, ((s - disc.width) // 2, (s - disc.height) // 2))
@@ -69,35 +98,8 @@ def build_moon_layer() -> Image.Image:
         Image.fromarray((alpha * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.0)),
         dtype=np.float32,
     ) / 255.0
-    # A touch of ambient lift so the disc does not sit on pure black.
     rgb = np.clip(np.asarray(disc, dtype=np.float32) + 4, 0, 255)
     return Image.fromarray(np.dstack([rgb, alpha * 255]).astype(np.uint8), "RGBA")
-
-
-def fit_grade(source: np.ndarray, target: np.ndarray, mask: np.ndarray) -> np.ndarray:
-    """Median per-channel lookup table from `source` to `target`."""
-    luts = []
-    for c in range(3):
-        s = source[:, :, c]
-        t = target[:, :, c]
-        lut = np.full(256, np.nan, dtype=np.float32)
-        for v in range(256):
-            sel = (s == v) & mask
-            if sel.sum() >= 30:
-                lut[v] = np.median(t[sel])
-        idx = np.arange(256)
-        good = ~np.isnan(lut)
-        luts.append(np.interp(idx, idx[good], lut[good]).astype(np.float32))
-    return np.stack(luts, axis=1)  # (256, 3)
-
-
-def apply_grade(image: np.ndarray, lut: np.ndarray) -> np.ndarray:
-    """Apply a (256, 3) lookup table, one channel at a time."""
-    idx = np.clip(np.rint(image), 0, 255).astype(np.uint8)
-    out = np.empty_like(image)
-    for c in range(3):
-        out[:, :, c] = lut[idx[:, :, c], c]
-    return out
 
 
 def remove_moon(plate: Image.Image) -> Image.Image:
@@ -105,16 +107,14 @@ def remove_moon(plate: Image.Image) -> Image.Image:
     Erase the original moon without leaving a visible patch.
 
     cv2.inpaint alone leaves a step at the mask edge, and on a smooth gradient
-    sky even a one-level step reads as a rectangle — clearly visible against
-    midnight. So the inpainted disc is then cross-faded into a heavily blurred
-    version of itself, with the cross-fade reaching exactly zero before the
-    patch boundary. A blur is continuous across that boundary by construction,
-    so no seam can survive.
+    sky even a one-level step reads as a rectangle. So the inpainted disc is
+    cross-faded into a heavily blurred version of itself, with the cross-fade
+    reaching zero before the patch boundary. A blur is continuous across that
+    boundary by construction, so no seam can survive.
     """
     arr = np.asarray(plate, dtype=np.uint8)
     h, w = arr.shape[:2]
 
-    # 1. Remove the disc + its halo. A tight mask keeps the inpaint local.
     mask = np.zeros((h, w), np.uint8)
     cv2.circle(mask, (int(MOON_CX), int(MOON_CY)), int(MOON_R * 2.2), 255, -1)
     mask = cv2.GaussianBlur(mask, (0, 0), 6)
@@ -123,7 +123,6 @@ def remove_moon(plate: Image.Image) -> Image.Image:
         cv2.COLOR_BGR2RGB,
     ).astype(np.float32)
 
-    # 2. Blend that patch into a wide blur of itself, feathered to zero.
     yy, xx = np.mgrid[0:h, 0:w]
     dist = np.sqrt((xx - MOON_CX) ** 2 + (yy - MOON_CY) ** 2)
     alpha = np.clip((MOON_R * 3.0 - dist) / (MOON_R * 1.2), 0, 1)
@@ -131,18 +130,15 @@ def remove_moon(plate: Image.Image) -> Image.Image:
 
     smooth = cv2.GaussianBlur(filled, (0, 0), MOON_R * 1.2)
     blended = filled * (1 - alpha[:, :, None]) + smooth * alpha[:, :, None]
-
     return Image.fromarray(np.clip(blended, 0, 255).astype(np.uint8))
 
 
 def composite_moon(plate: Image.Image, moon: Image.Image, gain: float, warm) -> Image.Image:
     """Erase the original moon, then paste the sharp disc with a tight halo."""
-    arr = np.asarray(plate, dtype=np.uint8)
-    h, w = arr.shape[:2]
     plate = remove_moon(plate)
+    w, h = plate.size
 
     dia = int(round(2 * MOON_R))
-    # Supersample: render large, let Lanczos do the reduction.
     big = dia * 8
     m = moon.resize((big, big), Image.LANCZOS)
     ma = np.asarray(m, dtype=np.float32)
@@ -161,45 +157,144 @@ def composite_moon(plate: Image.Image, moon: Image.Image, gain: float, warm) -> 
     hx, hy = int(MOON_CX - halo_px / 2), int(MOON_CY - halo_px / 2)
     x0, y0 = max(hx, 0), max(hy, 0)
     x1, y1 = min(hx + halo_px, w), min(hy + halo_px, h)
-    sub = h_arr[y0 - hy:y1 - hy, x0 - hx:x1 - hx]
-    base[y0:y1, x0:x1] = 255 - (255 - base[y0:y1, x0:x1]) * (255 - sub) / 255
+    base[y0:y1, x0:x1] = 255 - (255 - base[y0:y1, x0:x1]) * (
+        255 - h_arr[y0 - hy:y1 - hy, x0 - hx:x1 - hx]
+    ) / 255
     plate = Image.fromarray(np.clip(base, 0, 255).astype(np.uint8))
 
     plate.paste(m, (int(round(MOON_CX - dia / 2)), int(round(MOON_CY - dia / 2))), m)
     return plate
 
 
+# ── grade ─────────────────────────────────────────────────────────────────────
+
+def apply_grade(image: np.ndarray, lut: np.ndarray) -> np.ndarray:
+    """Apply a (256, 3) lookup table, one channel at a time."""
+    idx = np.clip(np.rint(image), 0, 255).astype(np.uint8)
+    out = np.empty_like(image)
+    for c in range(3):
+        out[:, :, c] = lut[idx[:, :, c], c]
+    return out
+
+
+# ── retouch ───────────────────────────────────────────────────────────────────
+
+def remove_badge(plate: Image.Image) -> tuple[Image.Image, float]:
+    """
+    Retouch the "392" grille badge out of a plate.
+
+    A brightness clamp is not enough: several of the badge glyphs are *darker*
+    than the grille mesh around them, so they survive it, and on the dusk plates
+    (whose grille is a smooth lit gradient) any rectangular patch shows as a
+    seam. The badge is therefore removed with a mask-based inpaint, feathered
+    far enough that the repair dissolves into the surrounding grille, with the
+    very core pulled toward a local blur to kill glyph edges.
+
+    Returns the retouched plate and the mean absolute change across the badge
+    box, so the caller can assert that real pixels were replaced.
+    """
+    x0, y0, x1, y1 = BADGE_BOX
+    arr = np.asarray(plate, dtype=np.uint8)
+    h, w = arr.shape[:2]
+    before = arr[y0:y1, x0:x1].astype(np.float32)
+
+    mask = np.zeros((h, w), np.uint8)
+    mask[y0:y1, x0:x1] = 255
+    mask = cv2.GaussianBlur(mask, (0, 0), 2.5)
+    filled = cv2.cvtColor(
+        cv2.inpaint(cv2.cvtColor(arr, cv2.COLOR_RGB2BGR), mask, 5, cv2.INPAINT_NS),
+        cv2.COLOR_BGR2RGB,
+    ).astype(np.float32)
+
+    yy, xx = np.mgrid[0:h, 0:w]
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    feather = 11.0
+    dx = np.maximum(np.abs(xx - cx) - ((x1 - x0) / 2 - 2), 0) / feather
+    dy = np.maximum(np.abs(yy - cy) - ((y1 - y0) / 2 - 2), 0) / feather
+    alpha = np.clip(1 - np.sqrt(dx * dx + dy * dy), 0, 1)
+    alpha = alpha * alpha * (3 - 2 * alpha)  # smoothstep
+
+    smooth = cv2.GaussianBlur(arr.astype(np.float32), (0, 0), 6)
+    base = arr.astype(np.float32)
+    out = base * (1 - alpha[:, :, None]) + filled * alpha[:, :, None]
+
+    core = np.clip(
+        1 - np.sqrt(
+            (np.maximum(np.abs(xx - cx) - ((x1 - x0) / 2 - 4), 0) / 3) ** 2
+            + (np.maximum(np.abs(yy - cy) - ((y1 - y0) / 2 - 3), 0) / 3) ** 2
+        ),
+        0, 1,
+    )[:, :, None]
+    out = out * (1 - core * 0.55) + smooth * core * 0.55
+
+    delta = float(np.abs(out[y0:y1, x0:x1] - before).mean())
+    return Image.fromarray(np.clip(out, 0, 255).astype(np.uint8)), delta
+
+
+# ── main ──────────────────────────────────────────────────────────────────────
+
 def main() -> int:
-    dusk_path = ASSETS / "dusk" / "scene.jpg"
-    dusk = Image.open(dusk_path).convert("RGB")
-    dusk_arr = np.asarray(dusk, dtype=np.float32)
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--from", dest="src", default=None,
+                    help="folder of pristine <period>.jpg plates to read instead of engine/assets")
+    args = ap.parse_args()
 
-    # The moon area must not influence the grade fit.
-    mask = np.ones(dusk_arr.shape[:2], bool)
-    mask[230:350, 860:960] = False
+    src_dir = Path(args.src) if args.src else None
 
+    def load(period: str) -> Image.Image:
+        path = (src_dir / f"{period}.jpg") if src_dir else (ASSETS / period / "scene.jpg")
+        return Image.open(path).convert("RGB")
+
+    grades = json.loads(GRADES.read_text())
     moon = build_moon_layer()
 
-    targets = {
-        # period: (moon gain, warm bias)
-        "night": (1.00, (0.98, 1.00, 1.05)),
-        "midnight": (0.80, (0.95, 1.00, 1.12)),
+    plates: dict[str, Image.Image] = {}
+    for period in PERIODS:
+        plates[period] = load(period)
+        print(f"  loaded {period}")
+
+    # 1. Derive night and midnight from the dusk master.
+    dusk_arr = np.asarray(plates["dusk"], dtype=np.float32)
+    for period, (gain, warm) in DERIVED.items():
+        lut = np.array(grades[period], dtype=np.float32)  # (3, 256)
+        graded = np.clip(apply_grade(dusk_arr, lut.T), 0, 255).astype(np.uint8)
+        plates[period] = composite_moon(Image.fromarray(graded), moon, gain, warm)
+        print(f"  derived {period} from dusk master")
+
+    # 2. Retouch the model badge out of every plate.
+    retouch = {}
+    for period in PERIODS:
+        plates[period], delta = remove_badge(plates[period])
+        retouch[period] = round(delta, 2)
+        print(f"  removed badge from {period} (mean change {delta:.1f} levels)")
+        # The retouch must actually have replaced pixels; a no-op here means the
+        # badge box no longer lines up and the plate was shipped with branding.
+        if delta < 0.5:
+            print(f"  ERROR: badge retouch did nothing on {period} — check BADGE_BOX", file=sys.stderr)
+            return 1
+
+    # 3. Encode once.
+    for period in PERIODS:
+        dest = ASSETS / period / "scene.jpg"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        plates[period].save(dest, **JPEG_KW)
+        print(f"  wrote {period}/scene.jpg ({dest.stat().st_size // 1024} KB)")
+
+    # 4. Record the retouch in the manifest. validate.mjs checks this, because a
+    #    pixel heuristic cannot tell a badge glyph from the grille's own lighting
+    #    gradient on the dusk plates.
+    manifest_path = ASSETS / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest.setdefault("retouch", {})
+    manifest["retouch"]["modelBadge"] = {
+        "applied": True,
+        "box": list(BADGE_BOX),
+        "method": "mask-based inpaint, feathered into the grille, core pulled to a local blur",
+        "meanChangePerPlate": retouch,
+        "note": "The plates carried a small '392' model badge on the grille. The brief forbids baked-in model names and logos, so it was retouched out of all six."
     }
-
-    for period, (gain, warm) in targets.items():
-        target_path = ASSETS / period / "scene.jpg"
-        target = np.asarray(Image.open(target_path).convert("RGB"), dtype=np.float32)
-        lut = fit_grade(dusk_arr, target, mask)
-        rebuilt = np.clip(apply_grade(dusk_arr, lut), 0, 255).astype(np.uint8)
-        plate = composite_moon(Image.fromarray(rebuilt), moon, gain, warm)
-        plate.save(target_path, **JPEG_KW)
-        print(f"  rebuilt {period}/scene.jpg  ({target_path.stat().st_size // 1024} KB)")
-
-    # Re-encode the untouched plates without chroma subsampling.
-    for period in ("morning", "day", "golden-hour", "dusk"):
-        p = ASSETS / period / "scene.jpg"
-        Image.open(p).convert("RGB").save(p, **JPEG_KW)
-        print(f"  re-encoded {period}/scene.jpg  ({p.stat().st_size // 1024} KB)")
+    manifest_path.write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+    print(f"  recorded retouch receipt in assets/manifest.json")
 
     return 0
 

@@ -81,27 +81,42 @@ body {
   height: 100%;
 }
 
-/* Raster images: cover + center, hidden until loaded.
+/* Raster images: cover + focal crop, hidden until loaded.
    `image-rendering: auto` is explicit so no engine or later rule can switch
    the scene to nearest-neighbour / pixelated scaling, and the transform-free
-   element lets the compositor resample with a proper filter. */
+   element lets the compositor resample with a proper filter.
+   `--focus` is set per period by script.js from the asset table, so narrow and
+   portrait viewports crop toward the car rather than the middle of the valley. */
 .scene-img,
 .headlight-img {
   object-fit: cover;
-  object-position: center;
+  object-position: var(--focus, 62% 74%);
   display: none;
   image-rendering: auto;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
 }
 
-/* Portrait displays crop hard into a 16:9 plate — bias the crop so the car
-   stays in frame instead of centring on empty valley. */
-@media (orientation: portrait) {
-  .scene-img,
-  .headlight-img {
-    object-position: 58% 50%;
-  }
+/* Tall assets: never stretch and never blindly crop. The frame is shown whole
+   (object-fit: contain) over a blurred, dimmed copy of itself, so a portrait
+   photograph reads as a deliberate composition on a wide screen instead of
+   being blown up to show a third of its height. script.js adds this class when
+   the loaded image is taller than 4:5. */
+.scene-img--contain {
+  object-fit: contain;
+  object-position: center;
+}
+
+.layer--contain::before {
+  content: '';
+  position: absolute;
+  inset: -40px;
+  background-image: var(--plate-url, none);
+  background-size: cover;
+  background-position: center;
+  filter: blur(38px) brightness(0.62) saturate(0.9);
+  transform: scale(1.06);
+  z-index: -1;
 }
 
 .svg-scene svg,

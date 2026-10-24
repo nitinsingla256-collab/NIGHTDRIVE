@@ -206,32 +206,85 @@ const PERIODS = [
   }
 ];
 
-const ASSETS = {
+/**
+ * SCENE ASSETS — one entry per period, with the car/landscape decoupling that
+ * a future customisation phase needs.
+ *
+ *   landscape  ordered candidate list for the wide plate (16:9-ish).
+ *   portrait   optional tall version shown on portrait displays. When absent
+ *              the engine falls back to `landscape` and presents it on its own
+ *              blurred backdrop rather than stretching or blind-cropping it
+ *              (see .scene-img--contain in styles.css).
+ *   cursor     optional independent car layer (transparent PNG/WebP) drawn on
+ *              top of the plate. Empty today: the car is part of the plate.
+ *   focus      the car's position in the plate as a percentage pair. Used as
+ *              object-position so portrait/narrow viewports crop toward the
+ *              car instead of the middle of the valley.
+ *
+ * `scene` is kept as the resolved landscape list so existing hosts, the
+ * service worker and the test suite keep working unchanged.
+ */
+const SCENE_ASSETS = {
   morning: {
-    scene: ['assets/morning/scene.jpg', 'assets/morning/scene.png', 'assets/morning/scene.svg'],
-    headlights: ['assets/morning/headlights.jpg', 'assets/morning/headlights.svg']
+    landscape: ['assets/morning/scene.jpg', 'assets/morning/scene.png', 'assets/morning/scene.svg'],
+    portrait: ['assets/morning/scene-portrait.jpg', 'assets/morning/scene-portrait.webp'],
+    cursor: ['assets/morning/car.png', 'assets/morning/car.webp'],
+    focus: ['62%', '74%'],
+    headlights: ['assets/morning/headlights.svg']
   },
   day: {
-    scene: ['assets/day/scene.jpg', 'assets/day/scene.png', 'assets/day/scene.svg'],
-    headlights: ['assets/day/headlights.jpg', 'assets/day/headlights.svg']
+    landscape: ['assets/day/scene.jpg', 'assets/day/scene.png', 'assets/day/scene.svg'],
+    portrait: ['assets/day/scene-portrait.jpg', 'assets/day/scene-portrait.webp'],
+    cursor: ['assets/day/car.png', 'assets/day/car.webp'],
+    focus: ['62%', '74%'],
+    headlights: ['assets/day/headlights.svg']
   },
   goldenHour: {
-    scene: ['assets/golden-hour/scene.jpg', 'assets/golden-hour/scene.png', 'assets/golden-hour/scene.svg'],
-    headlights: ['assets/golden-hour/headlights.jpg', 'assets/golden-hour/headlights.svg']
+    landscape: ['assets/golden-hour/scene.jpg', 'assets/golden-hour/scene.png', 'assets/golden-hour/scene.svg'],
+    portrait: ['assets/golden-hour/scene-portrait.jpg', 'assets/golden-hour/scene-portrait.webp'],
+    cursor: ['assets/golden-hour/car.png', 'assets/golden-hour/car.webp'],
+    focus: ['62%', '74%'],
+    headlights: ['assets/golden-hour/headlights.svg']
   },
   dusk: {
-    scene: ['assets/dusk/scene.jpg', 'assets/dusk/scene.png', 'assets/dusk/scene.svg'],
+    landscape: ['assets/dusk/scene.jpg', 'assets/dusk/scene.png', 'assets/dusk/scene.svg'],
+    portrait: ['assets/dusk/scene-portrait.jpg', 'assets/dusk/scene-portrait.webp'],
+    cursor: ['assets/dusk/car.png', 'assets/dusk/car.webp'],
+    focus: ['58%', '74%'],
     headlights: ['assets/dusk/headlights.jpg', 'assets/dusk/headlights.svg']
   },
   night: {
-    scene: ['assets/night/scene.jpg', 'assets/night/scene.png', 'assets/night/scene.svg'],
+    landscape: ['assets/night/scene.jpg', 'assets/night/scene.png', 'assets/night/scene.svg'],
+    portrait: ['assets/night/scene-portrait.jpg', 'assets/night/scene-portrait.webp'],
+    cursor: ['assets/night/car.png', 'assets/night/car.webp'],
+    focus: ['58%', '74%'],
     headlights: ['assets/night/headlights.jpg', 'assets/night/headlights.svg']
   },
   midnight: {
-    scene: ['assets/midnight/scene.jpg', 'assets/midnight/scene.png', 'assets/midnight/scene.svg'],
+    landscape: ['assets/midnight/scene.jpg', 'assets/midnight/scene.png', 'assets/midnight/scene.svg'],
+    portrait: ['assets/midnight/scene-portrait.jpg', 'assets/midnight/scene-portrait.webp'],
+    cursor: ['assets/midnight/car.png', 'assets/midnight/car.webp'],
+    focus: ['58%', '74%'],
     headlights: ['assets/midnight/headlights.jpg', 'assets/midnight/headlights.svg']
   }
 };
+
+/**
+ * ASSETS — the shape the rest of the engine consumes.
+ * `scene` is the landscape list; `headlights` is unchanged. Derived rather
+ * than duplicated so the two can never drift apart.
+ */
+const ASSETS = Object.keys(SCENE_ASSETS).reduce(function (table, id) {
+  const entry = SCENE_ASSETS[id];
+  table[id] = {
+    scene: entry.landscape,
+    portrait: entry.portrait,
+    cursor: entry.cursor,
+    focus: entry.focus,
+    headlights: entry.headlights
+  };
+  return table;
+}, {});
 
 const CLOCK_MS = 1000;   // HUD clock update interval
 const SCENE_MS = 15000;  // how often manual-mode re-checks in auto; also blend tick in auto
@@ -617,17 +670,45 @@ if (PLATFORM.webview2) {
   });
 }
 /** Load scene + headlight assets for a period, caching the result. */
+/**
+ * Is the viewport taller than it is wide? Re-read on every asset load so a
+ * window resize or a monitor rotation picks the other plate.
+ */
+function prefersPortraitAsset() {
+  return window.innerHeight > window.innerWidth * 1.05;
+}
+
+/**
+ * Load the scene + headlights for a period.
+ *
+ * A `portrait` plate is preferred on a tall viewport when one actually exists;
+ * otherwise the landscape plate is used and `fillLayer` presents it contained
+ * over a blurred backdrop rather than cropping it. Probe results are cached so
+ * a missing portrait file is only tried once.
+ */
 async function ensureAssets(periodId) {
-  if (assetsReady[periodId]) return assetsCache[periodId];
+  const wantPortrait = prefersPortraitAsset();
+  const cached = assetsCache[periodId];
+  if (cached && assetsReady[periodId] && cached.orientation === (wantPortrait ? 'portrait' : 'landscape')) {
+    return cached;
+  }
 
   const assets = ASSETS[periodId] || { scene: [], headlights: [] };
   const period = periodById(periodId);
-  const sceneAsset = await loadFirstAvailable(assets.scene);
+
+  let sceneAsset = null;
+  let orientation = 'landscape';
+  if (wantPortrait && assets.portrait && assets.portrait.length) {
+    sceneAsset = await loadFirstAvailable(assets.portrait);
+    if (sceneAsset) orientation = 'portrait';
+  }
+  if (!sceneAsset) sceneAsset = await loadFirstAvailable(assets.scene);
+
   const hlAsset = period && period.headlights
     ? await loadFirstAvailable(assets.headlights)
     : null;
 
-  assetsCache[periodId] = { scene: sceneAsset, headlights: hlAsset };
+  assetsCache[periodId] = { scene: sceneAsset, headlights: hlAsset, orientation: orientation };
   assetsReady[periodId] = true;
   return assetsCache[periodId];
 }
@@ -635,6 +716,35 @@ async function ensureAssets(periodId) {
 /* ══════════════════════════════════════════════
    LAYER POPULATION
    ══════════════════════════════════════════════ */
+
+/**
+ * Present a plate without stretching it.
+ *
+ * Landscape plates simply cover the frame (cropping is fine and intended).
+ * A tall plate — anything past 4:5 — is shown whole over a blurred copy of
+ * itself instead, so a portrait asset on a laptop is neither stretched nor
+ * reduced to a narrow middle strip.
+ */
+const MAX_COVER_ASPECT = 0.8;   // width / height; below this, switch to contain
+
+function applyPlateAspect(layer, img, src) {
+  const apply = function () {
+    const w = img.naturalWidth || 16;
+    const h = img.naturalHeight || 9;
+    const tall = h > 0 && (w / h) < MAX_COVER_ASPECT;
+    img.classList.toggle('scene-img--contain', tall);
+    layer.classList.toggle('layer--contain', tall);
+    if (tall) {
+      if (layer.style.getPropertyValue('--plate-url') !== 'url("' + src + '")') {
+        layer.style.setProperty('--plate-url', 'url("' + src + '")');
+      }
+    } else {
+      layer.style.removeProperty('--plate-url');
+    }
+  };
+  if (img.complete && img.naturalWidth) apply();
+  else img.addEventListener('load', apply, { once: true });
+}
 
 function fillLayer(layer, period, sceneAsset, headlightAsset) {
   const fallback = layer.querySelector('.scene-fallback');
@@ -650,17 +760,31 @@ function fillLayer(layer, period, sceneAsset, headlightAsset) {
   headImg.removeAttribute('src');
   headImg.classList.remove('is-on');
 
+  // Focal crop for this period (the car's position in the plate). The value
+  // lives in the asset table, not in PERIODS, so a future customisation phase
+  // can point a period at a completely different plate and crop.
+  const focus = ASSETS[period.id] && ASSETS[period.id].focus;
+  if (focus) {
+    const focusValue = focus[0] + ' ' + focus[1];
+    if (layer.style.getPropertyValue('--focus') !== focusValue) {
+      layer.style.setProperty('--focus', focusValue);
+    }
+  }
+
   // Scene
   if (sceneAsset && sceneAsset.kind === 'svg') {
     svgScene.innerHTML = sceneAsset.svg;
     sceneImg.removeAttribute('src');
-    sceneImg.classList.remove('is-loaded');
+    sceneImg.classList.remove('is-loaded', 'scene-img--contain');
+    layer.classList.remove('layer--contain');
   } else if (sceneAsset && sceneAsset.kind === 'raster') {
     sceneImg.src = sceneAsset.src;
     sceneImg.classList.add('is-loaded');
+    applyPlateAspect(layer, sceneImg, sceneAsset.src);
   } else {
     sceneImg.removeAttribute('src');
-    sceneImg.classList.remove('is-loaded');
+    sceneImg.classList.remove('is-loaded', 'scene-img--contain');
+    layer.classList.remove('layer--contain');
   }
 
   // Headlights (layer's intrinsic image — opacity controlled by caller)
@@ -782,6 +906,33 @@ function headlightOpacityFor(periodId, blendState) {
   // overlay just holds its target level; the two crossfade together.
   return HEADLIGHT_OPACITY;
 }
+
+/**
+ * Orientation changes: forget the cached orientation and repopulate the
+ * visible layer. Debounced so dragging a window edge does not thrash decodes.
+ */
+let orientationTimer = null;
+let lastPortraitState = prefersPortraitAsset();
+
+function onViewportResize() {
+  const now = prefersPortraitAsset();
+  if (now === lastPortraitState) return;
+  lastPortraitState = now;
+  clearTimeout(orientationTimer);
+  orientationTimer = setTimeout(function () {
+    assetsCache = {};
+    assetsReady = {};
+    const visibleId = currentId || layerAId;
+    if (visibleId) {
+      layerAId = visibleId;
+      layerBId = null;
+      ensureLayerPopulated(layerA, visibleId);
+    }
+  }, 250);
+}
+
+window.addEventListener('resize', onViewportResize);
+window.addEventListener('orientationchange', onViewportResize);
 
 /* ══════════════════════════════════════════════
    RAF BLEND LOOP (AUTO MODE)

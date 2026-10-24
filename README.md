@@ -16,10 +16,11 @@ system controls.
 ## Features
 
 - **Real-time scene blending**: 20-minute crossfades between six periods, with headlights fading in at dusk.
-- **Photographic plates**: six 1376×768 scene renders at 4:4:4 chroma, with a volumetric beam overlay, a photographic moon composite and a restrained soft-light grade.
+- **Photographic plates**: six 1376×768 scene renders at 4:4:4 chroma, with a volumetric beam overlay, a photographic moon composite and a restrained soft-light grade. Baked-in model badges are retouched out.
+- **Car and landscape are separate slots**: each period declares `landscape`, an optional `portrait` plate, an optional transparent `cursor` (car) layer and a `focus` point, so a future phase can swap car and scenery independently. Tall assets are shown whole over a blurred backdrop instead of stretched.
 - **HUD**: clock, date, live weather (Open-Meteo), battery level and charging state.
 - **Quick controls**: Wi-Fi, Bluetooth, Volume, Focus. These open the matching OS settings page on Windows and macOS.
-- **Works on all screen sizes**: desktop, laptop, 4K, tablet and phone (portrait and landscape). Handles notches and safe areas.
+- **Works on all screen sizes**: desktop, laptop, 4K, tablet and phone (portrait and landscape). Handles notches and safe areas. The crop follows the car, not the centre of the frame.
 - **Accessible**: keyboard navigable, visible focus, labelled controls, Esc closes dialogs. Respects *Reduce Motion* and Windows High Contrast.
 - **Works offline**: a service worker ([`engine/sw.js`](engine/sw.js)) pre-caches the page, styles and every scene, so the wallpaper keeps running with no network. Online it refreshes the cache in the background.
 - **No build step**: plain HTML/CSS/JS in [`engine/`](engine/).
@@ -67,6 +68,7 @@ NIGHTDRIVE/
 │   ├── engine-start.wav    # ignition sound played with the startup sequence
 │   ├── sw.js               # service worker — offline cache of the engine
 │   └── assets/             # per-period scenes + headlight overlays (see assets/README.md)
+│                           #   landscape / portrait / car-layer / focus slots per period
 ├── hosts/
 │   ├── windows/            # .NET 8 WPF + WebView2 host (desktop layer, tray, battery, Wi-Fi/BT)
 │   ├── linux/              # PyQt5 X11 desktop host + installer
@@ -74,6 +76,7 @@ NIGHTDRIVE/
 ├── src-tauri/              # Cross-platform Tauri v1 host
 ├── scripts/                # serve.mjs (dev server), validate.mjs + smoke.mjs (tests),
 │                           # rebuild-assets.py / build-headlights.py / preview-render.py (asset tooling)
+│                           # asset-grades.json (fitted night/midnight grade)
 ├── docs/screenshots/       # README gallery (predates the 1.4.0 visual pass)
 ├── docs/preview/           # compositing previews from scripts/preview-render.py
 └── .github/workflows/ci.yml

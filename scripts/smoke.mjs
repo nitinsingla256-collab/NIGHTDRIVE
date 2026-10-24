@@ -40,7 +40,13 @@ function makeElement(tagName = 'div', opts = {}) {
   const el = {
     tagName: tagName.toUpperCase(),
     nodeType: 1,
-    style: { setProperty() {}, removeProperty() {} },
+    style: {
+      _props: {},
+      setProperty(name, value) { this._props[name] = String(value); },
+      getPropertyValue(name) { return this._props[name] || ''; },
+      removeProperty(name) { delete this._props[name]; },
+      removeProperty_: undefined
+    },
     dataset: {},
     attributes: {},
     classList: makeClassList(),
@@ -98,7 +104,13 @@ function makeElement(tagName = 'div', opts = {}) {
  * Boot the engine. Returns a promise resolving to a report:
  *   { ok, errors: [...], hudText, sceneSrcs, layerCount }
  */
-export async function runEngineSmoke({ frames = 3, settleMs = 60 } = {}) {
+export async function runEngineSmoke({
+  frames = 3,
+  settleMs = 60,
+  plateSize = [1376, 768],
+  viewport = [1920, 1080],
+  availablePaths = null   // null = everything resolves; array = allowlist
+} = {}) {
   const source = readFileSync(join(root, 'engine/script.js'), 'utf8');
   const errors = [];
   const consoleErrors = [];
@@ -121,7 +133,14 @@ export async function runEngineSmoke({ frames = 3, settleMs = 60 } = {}) {
     for (const cls of layerChildren) {
       const child = makeElement('div');
       child.classList.add(cls);
-      if (cls === 'scene-img' || cls === 'headlight-img') child.tagName = 'IMG';
+      if (cls === 'scene-img' || cls === 'headlight-img') {
+        child.tagName = 'IMG';
+        // Real browsers report intrinsic size; default to 16:9 so the
+        // landscape path is what the stub exercises.
+        child.naturalWidth = plateSize[0];
+        child.naturalHeight = plateSize[1];
+        child.complete = true;
+      }
       kids.set('.' + cls, child);
     }
     const inner = layer.querySelector;
@@ -154,20 +173,34 @@ export async function runEngineSmoke({ frames = 3, settleMs = 60 } = {}) {
   };
 
   // ── Image loading: succeed asynchronously so asset promises resolve ──────
+  const isAvailable = (src) => !availablePaths || availablePaths.some((a) => src.endsWith(a));
+
   class FakeImage {
-    constructor() { this.onload = null; this.onerror = null; this.naturalWidth = 1920; this.naturalHeight = 1080; this._src = ''; }
+    constructor() {
+      this.onload = null; this.onerror = null; this._src = '';
+      this.naturalWidth = plateSize[0];
+      this.naturalHeight = plateSize[1];
+    }
     set src(value) {
       this._src = value;
-      setImmediate(() => { if (this.onload) this.onload(); });
+      setImmediate(() => {
+        if (!isAvailable(value)) { if (this.onerror) this.onerror(); return; }
+        this.naturalWidth = plateSize[0];
+        this.naturalHeight = plateSize[1];
+        if (this.onload) this.onload();
+      });
     }
     get src() { return this._src; }
     decode() { return Promise.resolve(); }
   }
 
   class FakeXHR {
-    constructor() { this.status = 200; this.responseText = ''; this.timeout = 0; }
-    open() {}
-    send() { setImmediate(() => { if (this.onload) this.onload(); }); }
+    constructor() { this.status = 404; this.responseText = ''; this.timeout = 0; this._src = ''; }
+    open(_m, url) { this._src = url; }
+    send() {
+      this.status = isAvailable(this._src) ? 200 : 404;
+      setImmediate(() => { if (this.onload) this.onload(); });
+    }
     addEventListener() {}
   }
 
@@ -181,8 +214,8 @@ export async function runEngineSmoke({ frames = 3, settleMs = 60 } = {}) {
   const clearTimeoutStub = () => {};
 
   const windowStub = {
-    innerWidth: 1920,
-    innerHeight: 1080,
+    innerWidth: viewport[0],
+    innerHeight: viewport[1],
     devicePixelRatio: 2,
     addEventListener() {},
     removeEventListener() {},
@@ -249,8 +282,8 @@ export async function runEngineSmoke({ frames = 3, settleMs = 60 } = {}) {
     isNaN,
     encodeURIComponent,
     decodeURIComponent,
-    innerWidth: 1920,
-    innerHeight: 1080,
+    innerWidth: viewport[0],
+    innerHeight: viewport[1],
     devicePixelRatio: 2,
     isSecureContext: false
   };
@@ -290,6 +323,14 @@ export async function runEngineSmoke({ frames = 3, settleMs = 60 } = {}) {
     .map((layer) => layer._kids.get('.scene-img').getAttribute('src') || layer._kids.get('.scene-img').src)
     .filter(Boolean);
 
+  const layerStyle = (layer) => ({
+    src: layer._kids.get('.scene-img').getAttribute('src') || layer._kids.get('.scene-img').src || '',
+    focus: layer.style.getPropertyValue('--focus'),
+    plateUrl: layer.style.getPropertyValue('--plate-url'),
+    contain: layer.classList.contains('layer--contain'),
+    imgContain: layer._kids.get('.scene-img').classList.contains('scene-img--contain')
+  });
+
   return {
     ok: errors.length === 0,
     errors,
@@ -298,7 +339,8 @@ export async function runEngineSmoke({ frames = 3, settleMs = 60 } = {}) {
     hudDate: getId('hud-date').textContent,
     sceneSrcs,
     framesRun,
-    layerCount: 2
+    layerCount: 2,
+    layers: [layerStyle(layerA), layerStyle(layerB)]
   };
 }
 
